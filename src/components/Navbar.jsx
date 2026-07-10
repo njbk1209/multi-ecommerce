@@ -9,14 +9,14 @@ const CurrencyToggle = () => {
   return (
     <div className="flex items-center bg-rose-50 border border-rose-100 rounded-full p-0.5 text-xs font-semibold uppercase tracking-wider">
       <button
-        onClick={() => setCurrency('EUR')}
+        onClick={() => setCurrency('USD')}
         className={`px-3 py-1 rounded-full transition-all duration-200 ${
-          currency === 'EUR'
+          currency === 'USD'
             ? 'bg-rose-400 text-white shadow-sm'
             : 'text-rose-300 hover:text-rose-400'
         }`}
       >
-        Euro BCV
+        Dólar
       </button>
       <button
         onClick={() => setCurrency('BS')}
@@ -35,21 +35,21 @@ const CurrencyToggle = () => {
 const Navbar = () => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const { cart } = useCart();
-  const { exchangeRate } = useCurrency();
+  const { exchangeRate, store } = useCurrency();
 
   return (
     <>
       {/* Barra de tasa del día */}
       {exchangeRate && (
         <div className="w-full bg-rose-500 text-white text-xs text-center py-1.5 tracking-wide font-medium">
-          💱 Tasa del día: <span className="font-bold">1 € = {exchangeRate.toLocaleString('es-VE')} Bs</span>
+          💱 Tasa del día: <span className="font-bold">1 $ = {exchangeRate.toLocaleString('es-VE')} Bs</span>
         </div>
       )}
 
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-rose-100 px-6 py-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="text-2xl font-serif font-semibold text-rose-500 tracking-tight cursor-pointer">
-            Postrecito<span className="text-rose-300">.</span>
+            {store?.comercial_name || 'Postrecito'}<span className="text-rose-300">.</span>
           </div>
 
           <div className="hidden md:flex gap-8 text-sm font-medium text-gray-600 uppercase tracking-widest">

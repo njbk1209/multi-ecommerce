@@ -1,13 +1,15 @@
 import React from 'react'
+import { useCurrency } from '../context/CurrencyContext'
 
 const Footer = () => {
+    const { store } = useCurrency();
     return (
         <footer className="bg-rose-50 border-t border-rose-100 pt-16 pb-8 px-6">
             <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
                 {/* Columna 1: Marca */}
                 <div>
                     <h3 className="text-2xl font-serif font-semibold text-rose-500 tracking-tight">
-                        Postrecito<span className="text-rose-300">.</span>
+                        {store?.comercial_name || 'Postrecito'}<span className="text-rose-300">.</span>
                     </h3>
                     <p className="text-gray-500 text-sm leading-relaxed max-w-xs">
                         Endulzando tus momentos especiales con repostería artesanal y diseños únicos.
@@ -27,7 +29,7 @@ const Footer = () => {
                 {/* Columna 3: Newsletter/Contacto */}
                 <div>
                     <h4 className="text-xs uppercase tracking-widest text-gray-400 font-bold mb-4">Contacto</h4>
-                    <p className="text-sm text-gray-600 mb-4">hola@postrecito.com</p>
+                    <p className="text-sm text-gray-600 mb-4">{store?.whatsapp ? `WhatsApp: ${store.whatsapp}` : 'hola@postrecito.com'}</p>
                     <div className="flex gap-4">
                         {/* Placeholders de Redes Sociales */}
                         <div className="w-8 h-8 rounded-full bg-white border border-rose-100 flex items-center justify-center text-rose-400 hover:bg-rose-400 hover:text-white transition-all cursor-pointer">
@@ -46,7 +48,7 @@ const Footer = () => {
 
             <div className="max-w-7xl mx-auto pt-8 border-t border-rose-100/50 text-center">
                 <p className="text-[10px] uppercase tracking-[0.2em] text-gray-400">
-                    &copy; {new Date().getFullYear()} Postrecito. Todos los derechos reservados.
+                    &copy; {new Date().getFullYear()} {store?.comercial_name || 'Postrecito'}. Todos los derechos reservados.
                 </p>
             </div>
         </footer>

@@ -7,24 +7,45 @@ import { useCart } from '../context/CartContext'
 import { useCurrency } from '../context/CurrencyContext'
 import toast from 'react-hot-toast'
 
-const API_URL = import.meta.env.VITE_API_URL
 
-const buildWhatsAppMessage = ({ nombre, whatsapp, cart, total, symbol, deliveryMethod }) => {
+const buildWhatsAppMessage = ({ nombre, whatsapp, cart, total, symbol, deliveryMethod, direccion, gpsUrl }) => {
   const lineas = cart
-    .map(item => `• ${item.qty}x ${item.name}`)
+    .map(item => {
+      let itemStr = `• ${item.qty}x ${item.name}`
+      if (item.selectedOptions && item.selectedOptions.length > 0) {
+        const opts = item.selectedOptions.map(o => o.nombre).join(', ')
+        itemStr += ` (${opts})`
+      }
+      if (item.comment) {
+        itemStr += ` [Nota: ${item.comment}]`
+      }
+      return itemStr
+    })
     .join('%0A')
 
   const entrega = deliveryMethod === 'shipping' ? 'Envío a domicilio' : 'Retiro en tienda'
 
-  return (
+  let mensaje = 
     `*Nuevo Pedido - Postrecito* 🍰%0A%0A` +
     `*Cliente:* ${nombre}%0A` +
     `*WhatsApp:* ${whatsapp}%0A` +
-    `*Entrega:* ${entrega}%0A%0A` +
-    `*Detalle:*%0A${lineas}%0A%0A` +
+    `*Entrega:* ${entrega}%0A`
+
+  if (deliveryMethod === 'shipping') {
+    if (direccion) {
+      mensaje += `*Dirección:* ${direccion}%0A`
+    }
+    if (gpsUrl) {
+      mensaje += `*Ubicación GPS:* ${gpsUrl}%0A`
+    }
+  }
+
+  mensaje += 
+    `%0A*Detalle:*%0A${lineas}%0A%0A` +
     `*Total a pagar:* ${total.toFixed(2)} ${symbol}%0A%0A` +
     `_Enviado desde la web_`
-  )
+
+  return mensaje
 }
 
 const DELIVERY_OPTIONS = [
@@ -43,21 +64,64 @@ const DELIVERY_OPTIONS = [
 ]
 
 export default function CartDrawer({ isOpen, setIsOpen }) {
-  const { cart, getTotal, removeFromCart, updateQuantity, setCart } = useCart()
-  const { currency, isBS } = useCurrency()
+  const { cart, getTotal, removeFromCart, updateQuantity, setCart, validateCartBeforeCheckout } = useCart()
+  const { currency, isBS, store } = useCurrency()
   const [form, setForm]             = useState({ nombre: '', whatsapp: '' })
   const [deliveryMethod, setDeliveryMethod] = useState('pickup')
+  const [direccion, setDireccion]   = useState('')
+  const [gpsLocation, setGpsLocation] = useState(null)
+  const [geoLoading, setGeoLoading]   = useState(false)
   const [loading, setLoading]       = useState(false)
 
   const total  = getTotal(currency)
-  const symbol = isBS ? 'Bs' : '€'
+  const symbol = isBS ? 'Bs' : '$'
 
   const unitPrice = (item) => isBS ? item.price_bs  : item.price
   const subtotal  = (item) => ((unitPrice(item) ?? 0) * item.qty).toFixed(2)
 
+  const handleGeolocate = () => {
+    setGeoLoading(true)
+    if (!navigator.geolocation) {
+      toast.error('Tu navegador no soporta geolocalización.')
+      setGeoLoading(false)
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords
+        setGpsLocation({ lat: latitude, lng: longitude })
+        setGeoLoading(false)
+        toast.success('📍 Ubicación obtenida con éxito.')
+      },
+      (error) => {
+        console.error(error)
+        setGeoLoading(false)
+        let msg = 'No se pudo obtener la ubicación GPS.'
+        if (error.code === error.PERMISSION_DENIED) {
+          msg = 'Permiso de ubicación denegado. Actívalo en tu navegador.'
+        }
+        toast.error(msg)
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
+
   const handleCheckout = async (e) => {
     e.preventDefault()
     setLoading(true)
+
+    // Validar el carrito con Supabase antes de procesar
+    const validation = await validateCartBeforeCheckout()
+    if (!validation.valid) {
+      validation.messages.forEach(msg => toast.error(msg, { duration: 5000 }));
+      setLoading(false)
+      return
+    }
+
+    const gpsUrl = gpsLocation 
+      ? `https://maps.google.com/?q=${gpsLocation.lat},${gpsLocation.lng}`
+      : null
 
     const mensaje = buildWhatsAppMessage({
       nombre:         form.nombre,
@@ -66,54 +130,37 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
       total,
       symbol,
       deliveryMethod,
+      direccion,
+      gpsUrl
     })
 
-    const payload = {
-      customer_name:     form.nombre,
-      customer_whatsapp: form.whatsapp,
-      delivery_method:   deliveryMethod,
-      total_eur:         getTotal('EUR'),
-      total_bs:          getTotal('BS'),
-      items:             cart.map(item => ({ product_id: item.id, qty: item.qty })),
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/api/order/create-order/`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(payload),
-      })
-
-      if (!res.ok) {
-        const errors = await res.json()
-        const mensaje_error = Object.values(errors).flat().join(' ')
-        throw new Error(mensaje_error)
+    // Formatear el número de whatsapp de la tienda
+    const storeWhatsapp = store?.whatsapp || '584245305968';
+    let formattedWhatsapp = storeWhatsapp.replace(/\D/g, ''); // Deja solo dígitos
+    if (formattedWhatsapp.length > 0) {
+      if (formattedWhatsapp.startsWith('0')) {
+        formattedWhatsapp = '58' + formattedWhatsapp.substring(1);
+      } else if (formattedWhatsapp.length === 10 && !formattedWhatsapp.startsWith('58')) {
+        formattedWhatsapp = '58' + formattedWhatsapp;
       }
-
-      toast.success('¡Pedido registrado! Abriendo WhatsApp...', {
-        duration: 4000,
-        icon: '🍰',
-      })
-
-      setCart([])
-      setForm({ nombre: '', whatsapp: '' })
-      setDeliveryMethod('pickup')
-
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      window.open(`https://wa.me/584245305968?text=${mensaje}`, '_blank')
-      setIsOpen(false)
-
-    } catch (error) {
-      toast.error(
-        error.message || 'Error al registrar el pedido. Serás redirigido a WhatsApp.',
-        { duration: 5000 }
-      )
-      window.open(`https://wa.me/584245305968?text=${mensaje}`, '_blank')
-
-    } finally {
-      setLoading(false)
+    } else {
+      formattedWhatsapp = '584245305968'; // Fallback
     }
+
+    toast.success('¡Generando pedido! Abriendo WhatsApp...', {
+      duration: 4000,
+      icon: '🍰',
+    })
+
+    setCart([])
+    setForm({ nombre: '', whatsapp: '' })
+    setDireccion('')
+    setGpsLocation(null)
+    setDeliveryMethod('pickup')
+    setIsOpen(false)
+
+    window.open(`https://wa.me/${formattedWhatsapp}?text=${mensaje}`, '_blank')
+    setLoading(false)
   }
 
   return (
@@ -168,7 +215,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                         ) : (
                           <ul className="divide-y divide-rose-50">
                             {cart.map((product) => (
-                              <li key={product.id} className="flex py-6 items-center gap-4">
+                              <li key={product.cartItemId} className="flex py-6 items-center gap-4">
                                 <div className="h-16 w-16 shrink-0 overflow-hidden rounded-md border border-rose-100">
                                   {product.image
                                     ? <img src={product.image} alt={product.name} className="h-full w-full object-cover" />
@@ -178,12 +225,37 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
 
                                 <div className="flex-1">
                                   <h4 className="font-medium text-gray-800 text-sm">{product.name}</h4>
-                                  <p className="text-xs text-rose-400 mb-2 font-light">
+                                  
+                                  {/* Modificadores Seleccionados */}
+                                  {product.selectedOptions && product.selectedOptions.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {product.selectedOptions.map((opt) => (
+                                        <span key={opt.id} className="text-[10px] bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded font-medium border border-rose-100/50 flex items-center gap-0.5">
+                                          {opt.nombre}
+                                          {opt.price_modifier > 0 && (
+                                            <span className="opacity-80">
+                                              (+${opt.price_modifier.toFixed(2)})
+                                            </span>
+                                          )}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Nota especial */}
+                                  {product.comment && (
+                                    <p className="text-[10px] text-slate-500 italic mt-1.5 bg-slate-50 px-2 py-1 rounded border border-slate-100">
+                                      Nota: "{product.comment}"
+                                    </p>
+                                  )}
+
+                                  <p className="text-xs text-rose-400 my-2 font-light">
                                     Unitario: {unitPrice(product)} {symbol}
                                   </p>
+                                  
                                   <div className="flex items-center border border-rose-100 rounded-lg overflow-hidden w-fit">
                                     <button
-                                      onClick={() => updateQuantity(product.id, -1)}
+                                      onClick={() => updateQuantity(product.cartItemId, -1)}
                                       className="px-2 py-1 bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
                                     >
                                       -
@@ -192,7 +264,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                       {product.qty}
                                     </span>
                                     <button
-                                      onClick={() => updateQuantity(product.id, 1)}
+                                      onClick={() => updateQuantity(product.cartItemId, 1)}
                                       disabled={product.qty >= product.stock}
                                       className={`px-2 py-1 bg-rose-50 text-rose-600 transition-colors
                                         ${product.qty >= product.stock ? 'opacity-30 cursor-not-allowed' : 'hover:bg-rose-100'}`}
@@ -207,7 +279,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                     {subtotal(product)} {symbol}
                                   </p>
                                   <button
-                                    onClick={() => removeFromCart(product.id)}
+                                    onClick={() => removeFromCart(product.cartItemId)}
                                     className="text-rose-300 hover:text-rose-500 transition-colors"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -270,6 +342,73 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                             className="w-full px-4 py-3 rounded-xl border border-rose-200 focus:ring-2 focus:ring-rose-400 outline-none text-sm"
                             onChange={e => setForm({ ...form, whatsapp: e.target.value })}
                           />
+
+                          {deliveryMethod === 'shipping' && (
+                            <div className="space-y-2.5 transition-all duration-300">
+                              <textarea
+                                required
+                                value={direccion}
+                                placeholder="Dirección de Entrega (calle, casa, puntos de referencia)"
+                                rows={2}
+                                className="w-full px-4 py-3 rounded-xl border border-rose-200 focus:ring-2 focus:ring-rose-400 outline-none text-sm resize-none"
+                                onChange={e => setDireccion(e.target.value)}
+                              />
+                              
+                              <div className="bg-white rounded-xl p-3 border border-rose-100 space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-[11px] font-semibold text-rose-800">📍 Ubicación GPS (Recomendado)</span>
+                                  {gpsLocation && (
+                                    <button 
+                                      type="button"
+                                      onClick={() => setGpsLocation(null)}
+                                      className="text-[10px] text-rose-400 hover:text-rose-600 hover:underline"
+                                    >
+                                      Quitar
+                                    </button>
+                                  )}
+                                </div>
+                                
+                                {!gpsLocation ? (
+                                  <button
+                                    type="button"
+                                    disabled={geoLoading}
+                                    onClick={handleGeolocate}
+                                    className={`w-full py-2 px-3 rounded-lg border border-dashed border-rose-200 text-rose-500 hover:bg-rose-50 transition-colors text-xs font-medium flex items-center justify-center gap-1.5
+                                      ${geoLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                  >
+                                    {geoLoading ? (
+                                      <>
+                                        <span className="animate-spin text-rose-400">⏳</span>
+                                        Obteniendo ubicación...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span>📍</span>
+                                        Obtener mi ubicación GPS
+                                      </>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <div className="space-y-2">
+                                    <div className="text-[10px] text-emerald-600 bg-emerald-50 py-0.5 px-2 rounded w-fit font-medium flex items-center gap-1">
+                                      <span>✓</span> Ubicación GPS guardada
+                                    </div>
+                                    <iframe 
+                                      title="Ubicación de entrega"
+                                      width="100%" 
+                                      height="130" 
+                                      frameBorder="0" 
+                                      scrolling="no" 
+                                      marginHeight="0" 
+                                      marginWidth="0" 
+                                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${gpsLocation.lng - 0.002}%2C${gpsLocation.lat - 0.001}%2C${gpsLocation.lng + 0.002}%2C${gpsLocation.lat + 0.001}&layer=mapnik&marker=${gpsLocation.lat}%2C${gpsLocation.lng}`}
+                                      className="rounded-lg border border-slate-100 shadow-inner"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
 
                           <button
                             type="submit"

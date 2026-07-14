@@ -1,12 +1,15 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { supabase } from '../utils/supabase'
+import { useCurrency } from '../context/CurrencyContext'
 
-const Login = ({ onLogin, session }) => {
+const Login = ({ session }) => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
+  const { store } = useCurrency()
 
   // Redirigir si ya tiene sesión
   React.useEffect(() => {
@@ -15,34 +18,59 @@ const Login = ({ onLogin, session }) => {
     }
   }, [session, navigate])
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
 
-    // Simular retraso de red para dar experiencia realista
-    setTimeout(() => {
-      if (email.trim() === 'admin@postrecito.com' && password === 'admin123') {
-        toast.success('¡Sesión iniciada correctamente!', {
-          icon: '🔑',
-          style: {
-            background: '#18181b',
-            color: '#fff',
-            borderRadius: '12px'
-          }
-        })
-        onLogin(email)
-        navigate('/admin')
-      } else {
-        toast.error('Credenciales inválidas. Usa admin@postrecito.com / admin123', {
-          style: {
-            background: '#18181b',
-            color: '#fff',
-            borderRadius: '12px'
-          }
-        })
+    try {
+      // 1. Autenticar credenciales con Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password
+      })
+
+      if (authError) {
+        throw authError
       }
+
+      // 2. Validar si el usuario pertenece específicamente a la tienda activa de este frontend
+      const { data: storeUser, error: relationError } = await supabase
+        .from('store_user')
+        .select('store_id')
+        .eq('user_id', authData.user.id)
+        .maybeSingle()
+
+      if (relationError) {
+        throw relationError
+      }
+
+      if (!storeUser || storeUser.store_id !== store?.id) {
+        // Cerrar sesión inmediatamente si no tiene relación con esta tienda
+        await supabase.auth.signOut()
+        throw new Error('No tienes permisos de administrador para esta tienda.')
+      }
+
+      toast.success('¡Sesión iniciada correctamente!', {
+        icon: '🔑',
+        style: {
+          background: '#18181b',
+          color: '#fff',
+          borderRadius: '12px'
+        }
+      })
+      navigate('/admin')
+    } catch (err) {
+      console.error('Error de login:', err)
+      toast.error(err.message || 'Error al iniciar sesión. Verifica tus credenciales.', {
+        style: {
+          background: '#18181b',
+          color: '#fff',
+          borderRadius: '12px'
+        }
+      })
+    } finally {
       setLoading(false)
-    }, 800)
+    }
   }
 
   return (
@@ -116,13 +144,6 @@ const Login = ({ onLogin, session }) => {
             )}
           </button>
         </form>
-
-        {/* Demo Creds */}
-        <div className="bg-zinc-50 border border-zinc-200/60 rounded-2xl p-4 text-[11px] text-zinc-500 leading-relaxed text-center font-medium">
-          🔒 <span className="font-bold text-zinc-700">Acceso de prueba:</span><br />
-          Email: <code className="bg-zinc-200/60 px-1 py-0.5 rounded font-mono text-zinc-800">admin@postrecito.com</code><br />
-          Contraseña: <code className="bg-zinc-200/60 px-1 py-0.5 rounded font-mono text-zinc-800">admin123</code>
-        </div>
 
       </div>
 

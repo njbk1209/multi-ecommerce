@@ -1,1 +1,0 @@
-INSERT INTO "public"."producto_opciones_grupo" ("id", "store", "nombre", "es_multiple", "es_obligatorio", "created_at") VALUES ('91139e5e-19b1-445f-bf82-3070309a27d7', 1, 'Adicionales', true, false, '2026-07-14 13:00:11.744402+00');

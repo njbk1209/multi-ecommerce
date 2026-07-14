@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { 
   LogOut, 
@@ -16,121 +16,91 @@ import {
   Phone
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-
-// Mock de Pedidos Estáticos Iniciales
-const INITIAL_ORDERS = [
-  {
-    id: 1042,
-    created_at: '2026-07-14T09:12:00Z',
-    nombre_cliente: 'Sofía Rodríguez',
-    whatsapp_cliente: '584129876543',
-    metodo_entrega: 'shipping',
-    direccion_entrega: 'Av. Las Flores, Res. Girasol, Apto 4B',
-    gps_url: 'https://maps.google.com/?q=10.4806,-66.9036',
-    total_usd: 22.97,
-    total_bs: 16298.15,
-    moneda_activa: 'USD',
-    estado: 'pendiente',
-    items: [
-      {
-        id: 1,
-        nombre_producto: 'Margherita Classica',
-        cantidad: 2,
-        precio_unitario: 6.99,
-        comentario: 'Sin albahaca, bien cocida.',
-        opciones_seleccionadas: [
-          { nombre: 'Mediana', price_modifier: 2.50 }
-        ]
-      },
-      {
-        id: 2,
-        nombre_producto: 'Pancetta',
-        cantidad: 1,
-        precio_unitario: 8.99,
-        comentario: null,
-        opciones_seleccionadas: []
-      }
-    ]
-  },
-  {
-    id: 1041,
-    created_at: '2026-07-14T08:45:00Z',
-    nombre_cliente: 'Juan Pérez',
-    whatsapp_cliente: '584241112233',
-    metodo_entrega: 'pickup',
-    direccion_entrega: null,
-    gps_url: null,
-    total_usd: 8.99,
-    total_bs: 6379.03,
-    moneda_activa: 'BS',
-    estado: 'preparando',
-    items: [
-      {
-        id: 3,
-        nombre_producto: 'Pancetta',
-        cantidad: 1,
-        precio_unitario: 8.99,
-        comentario: 'Extra salsa pesto',
-        opciones_seleccionadas: []
-      }
-    ]
-  },
-  {
-    id: 1040,
-    created_at: '2026-07-13T18:30:00Z',
-    nombre_cliente: 'Camila Blanco',
-    whatsapp_cliente: '584168889900',
-    metodo_entrega: 'shipping',
-    direccion_entrega: 'Calle Miranda, Casa #25, Chacao',
-    gps_url: 'https://maps.google.com/?q=10.4910,-66.8200',
-    total_usd: 4.99,
-    total_bs: 3541.35,
-    moneda_activa: 'USD',
-    estado: 'completado',
-    items: [
-      {
-        id: 4,
-        nombre_producto: 'Margherita Classica',
-        cantidad: 1,
-        precio_unitario: 4.99,
-        comentario: null,
-        opciones_seleccionadas: [
-          { nombre: 'Pequeña', price_modifier: 0.00 }
-        ]
-      }
-    ]
-  }
-]
+import { supabase } from '../utils/supabase'
+import { useCurrency } from '../context/CurrencyContext'
 
 const AdminDashboard = ({ onLogout, session }) => {
   const navigate = useNavigate()
-  const [orders, setOrders] = useState(INITIAL_ORDERS)
+  const { store } = useCurrency()
+  const [orders, setOrders] = useState([])
   const [filter, setFilter] = useState('all') // 'all' | 'pendiente' | 'preparando' | 'completado' | 'cancelado'
-  const [expandedOrders, setExpandedOrders] = useState({ 1042: true }) // Expande el primero por defecto
+  const [expandedOrders, setExpandedOrders] = useState({})
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // Simular recarga de datos
-  const handleRefresh = () => {
+  // Cargar pedidos de Supabase
+  const fetchOrders = async (showToast = false) => {
+    if (!store?.id) return
     setIsRefreshing(true)
-    setTimeout(() => {
-      setIsRefreshing(false)
-      toast.success('Pedidos sincronizados correctamente', {
-        icon: '🔄',
+    try {
+      const { data, error } = await supabase
+        .from('pedido')
+        .select(`
+          *,
+          items:pedido_item (
+            *
+          )
+        `)
+        .eq('store_id', store.id)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      
+      setOrders(data || [])
+      
+      // Auto-expandir el primer pedido si existe y no hay nada expandido
+      if (data && data.length > 0 && Object.keys(expandedOrders).length === 0) {
+        setExpandedOrders({ [data[0].id]: true })
+      }
+
+      if (showToast) {
+        toast.success('Pedidos sincronizados correctamente', {
+          icon: '🔄',
+          style: { background: '#18181b', color: '#fff', borderRadius: '12px' }
+        })
+      }
+    } catch (err) {
+      console.error('Error al cargar pedidos:', err)
+      toast.error('No se pudieron cargar los pedidos de la base de datos.', {
         style: { background: '#18181b', color: '#fff', borderRadius: '12px' }
       })
-    }, 600)
+    } finally {
+      setIsRefreshing(false)
+    }
   }
 
-  // Cambiar el estado de un pedido
-  const handleUpdateStatus = (orderId, newStatus) => {
-    setOrders(prevOrders => 
-      prevOrders.map(order => 
-        order.id === orderId ? { ...order, estado: newStatus } : order
+  // Cargar al montar el componente o al cambiar de tienda
+  useEffect(() => {
+    fetchOrders()
+  }, [store?.id])
+
+  const handleRefresh = () => {
+    fetchOrders(true)
+  }
+
+  // Cambiar el estado de un pedido en la base de datos
+  const handleUpdateStatus = async (orderId, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('pedido')
+        .update({ estado: newStatus })
+        .eq('id', orderId)
+
+      if (error) throw error
+
+      setOrders(prevOrders => 
+        prevOrders.map(order => 
+          order.id === orderId ? { ...order, estado: newStatus } : order
+        )
       )
-    )
-    toast.success(`Pedido #${orderId} cambiado a: ${newStatus}`, {
-      style: { background: '#18181b', color: '#fff', borderRadius: '12px' }
-    })
+      toast.success(`Pedido #${orderId} cambiado a: ${newStatus}`, {
+        style: { background: '#18181b', color: '#fff', borderRadius: '12px' }
+      })
+    } catch (err) {
+      console.error('Error al actualizar estado:', err)
+      toast.error('No se pudo actualizar el estado del pedido.', {
+        style: { background: '#18181b', color: '#fff', borderRadius: '12px' }
+      })
+    }
   }
 
   // Toggle expansión de detalles
@@ -183,8 +153,8 @@ const AdminDashboard = ({ onLogout, session }) => {
             <h1 className="text-2xl font-serif text-zinc-950 font-semibold tracking-tight">
               Postrecito Admin
             </h1>
-            <span className="text-[10px] bg-zinc-100 text-zinc-600 border border-zinc-200/80 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-              Modo Estático
+            <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+              Conectado
             </span>
           </div>
 
@@ -450,7 +420,7 @@ const AdminDashboard = ({ onLogout, session }) => {
                       <div className="space-y-3">
                         <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500">Productos del Pedido</h4>
                         <div className="bg-white border border-zinc-200/60 rounded-xl divide-y divide-zinc-100 overflow-hidden shadow-inner">
-                          {order.items.map(item => (
+                          {order.items?.map(item => (
                             <div key={item.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
                               
                               <div className="space-y-1">

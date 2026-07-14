@@ -7,6 +7,9 @@ import Footer from './components/Footer'
 import About from './sections/About'
 import Login from './components/Login'
 import AdminDashboard from './components/AdminDashboard'
+import { supabase } from './utils/supabase'
+import { useCurrency } from './context/CurrencyContext'
+import toast from 'react-hot-toast'
 
 // Componente para proteger las rutas administrativas de forma declarativa
 const ProtectedRoute = ({ children, session }) => {
@@ -27,19 +30,59 @@ const ShopLayout = () => (
 )
 
 const App = () => {
-  const [session, setSession] = useState(() => {
-    const saved = localStorage.getItem('postrecito_admin_session')
-    return saved ? JSON.parse(saved) : null
-  })
+  const [session, setSession] = useState(null)
+  const { store } = useCurrency()
 
-  const handleLogin = (email) => {
-    const mockSession = { user: { email } }
-    localStorage.setItem('postrecito_admin_session', JSON.stringify(mockSession))
-    setSession(mockSession)
+  const validateStoreAdmin = async (userId) => {
+    if (!store?.id) return false
+    try {
+      const { data, error } = await supabase
+        .from('store_user')
+        .select('store_id')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (error || !data) return false
+      return data.store_id === store.id
+    } catch (err) {
+      return false
+    }
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('postrecito_admin_session')
+  useEffect(() => {
+    const checkSession = async (currentSession) => {
+      if (!store) return // Esperar a que la tienda esté cargada en el contexto antes de validar
+      if (currentSession) {
+        const isValid = await validateStoreAdmin(currentSession.user.id)
+        if (isValid) {
+          setSession(currentSession)
+        } else {
+          await supabase.auth.signOut()
+          setSession(null)
+          toast.error('Sesión cerrada: no tienes permisos para esta tienda.', {
+            style: { background: '#18181b', color: '#fff', borderRadius: '12px' }
+          })
+        }
+      } else {
+        setSession(null)
+      }
+    }
+
+    // 1. Obtener la sesión activa al cargar
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      checkSession(currentSession)
+    })
+
+    // 2. Escuchar cambios en la autenticación en tiempo real
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      checkSession(currentSession)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [store])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
     setSession(null)
   }
 
@@ -48,7 +91,7 @@ const App = () => {
       <Route path="/" element={<ShopLayout />} />
       <Route 
         path="/login" 
-        element={<Login onLogin={handleLogin} session={session} />} 
+        element={<Login session={session} />} 
       />
       <Route 
         path="/admin" 

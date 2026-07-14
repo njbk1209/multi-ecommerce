@@ -1,3 +1,5 @@
+// components/ProductCard.jsx
+
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useCart } from '../context/CartContext'
 import { useCurrency } from '../context/CurrencyContext'
@@ -6,12 +8,14 @@ import { ShoppingBag } from 'lucide-react'
 import CustomizerModal from './CustomizerModal'
 
 const ProductCard = ({
-  id, name, category, stock, date_added,
+  id, name, description, category, stock, date_added,
   price, compare_price,
   price_bs, compare_price_bs,
   discount_percent,
   images,
   precio_por_tamano = false,
+  hasModifiers = false,
+  optionGroups = [],
 }) => {
   const { addToCart } = useCart()
   const { isBS } = useCurrency()
@@ -45,6 +49,7 @@ const ProductCard = ({
     compare_price_bs,
     image: mainImage,
     precio_por_tamano,
+    optionGroups,
   }
 
   return (
@@ -81,8 +86,13 @@ const ProductCard = ({
       <div className="p-3 text-center">
         <span className="text-xs uppercase tracking-widest text-rose-400 font-medium">{category}</span>
         <h3 className="text-base lg:text-[18px] font-medium text-slate-700 mt-1">{name}</h3>
+        {description && (
+          <p className="text-[13px] text-slate-400 mt-1 line-clamp-2 px-1 leading-relaxed">
+            {description}
+          </p>
+        )}
 
-        <div className="mt-2 flex items-center justify-center gap-2">
+        <div className="mt-2.5 flex items-center justify-center gap-2">
           <p className="text-rose-500 font-semibold">
             {precio_por_tamano && 'Desde '} {formatPrice(activePrice)} {symbol}
           </p>
@@ -95,7 +105,20 @@ const ProductCard = ({
 
         <button
           disabled={isOutOfStock}
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            console.log('DEBUG: click en tarjeta', {
+              id,
+              name,
+              precio_por_tamano,
+              hasModifiers,
+              productData
+            })
+            if (precio_por_tamano || hasModifiers) {
+              setIsModalOpen(true)
+            } else {
+              addToCart(productData)
+            }
+          }}
           className={`mt-4 w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-75 active:scale-95 flex items-center justify-center gap-2
             ${isOutOfStock
               ? 'bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200'

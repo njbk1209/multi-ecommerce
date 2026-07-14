@@ -6,6 +6,7 @@ import { X, ShoppingBag, Trash2, MessageCircle, Store, Truck } from 'lucide-reac
 import { useCart } from '../context/CartContext'
 import { useCurrency } from '../context/CurrencyContext'
 import toast from 'react-hot-toast'
+import { supabase } from '../utils/supabase'
 
 
 const buildWhatsAppMessage = ({ nombre, whatsapp, cart, total, symbol, deliveryMethod, direccion, gpsUrl }) => {
@@ -25,7 +26,7 @@ const buildWhatsAppMessage = ({ nombre, whatsapp, cart, total, symbol, deliveryM
 
   const entrega = deliveryMethod === 'shipping' ? 'Envío a domicilio' : 'Retiro en tienda'
 
-  let mensaje = 
+  let mensaje =
     `*Nuevo Pedido - Postrecito* 🍰%0A%0A` +
     `*Cliente:* ${nombre}%0A` +
     `*WhatsApp:* ${whatsapp}%0A` +
@@ -40,8 +41,8 @@ const buildWhatsAppMessage = ({ nombre, whatsapp, cart, total, symbol, deliveryM
     }
   }
 
-  mensaje += 
-    `%0A*Detalle:*%0A${lineas}%0A%0A` +
+  mensaje +=
+    `%0A*Productos:*%0A${lineas}%0A%0A` +
     `*Total a pagar:* ${total.toFixed(2)} ${symbol}%0A%0A` +
     `_Enviado desde la web_`
 
@@ -66,18 +67,18 @@ const DELIVERY_OPTIONS = [
 export default function CartDrawer({ isOpen, setIsOpen }) {
   const { cart, getTotal, removeFromCart, updateQuantity, setCart, validateCartBeforeCheckout } = useCart()
   const { currency, isBS, store } = useCurrency()
-  const [form, setForm]             = useState({ nombre: '', whatsapp: '' })
+  const [form, setForm] = useState({ nombre: '', whatsapp: '' })
   const [deliveryMethod, setDeliveryMethod] = useState('pickup')
-  const [direccion, setDireccion]   = useState('')
+  const [direccion, setDireccion] = useState('')
   const [gpsLocation, setGpsLocation] = useState(null)
-  const [geoLoading, setGeoLoading]   = useState(false)
-  const [loading, setLoading]       = useState(false)
+  const [geoLoading, setGeoLoading] = useState(false)
+  const [loading, setLoading] = useState(false)
 
-  const total  = getTotal(currency)
+  const total = getTotal(currency)
   const symbol = isBS ? 'Bs' : '$'
 
-  const unitPrice = (item) => isBS ? item.price_bs  : item.price
-  const subtotal  = (item) => ((unitPrice(item) ?? 0) * item.qty).toFixed(2)
+  const unitPrice = (item) => isBS ? item.price_bs : item.price
+  const subtotal = (item) => ((unitPrice(item) ?? 0) * item.qty).toFixed(2)
 
   const handleGeolocate = () => {
     setGeoLoading(true)
@@ -119,13 +120,13 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
       return
     }
 
-    const gpsUrl = gpsLocation 
+    const gpsUrl = gpsLocation
       ? `https://maps.google.com/?q=${gpsLocation.lat},${gpsLocation.lng}`
       : null
 
     const mensaje = buildWhatsAppMessage({
-      nombre:         form.nombre,
-      whatsapp:       form.whatsapp,
+      nombre: form.nombre,
+      whatsapp: form.whatsapp,
       cart,
       total,
       symbol,
@@ -133,6 +134,37 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
       direccion,
       gpsUrl
     })
+
+    // Guardar el pedido en Supabase a través de una función RPC transaccional
+    try {
+      const { data: pedidoId, error: rpcError } = await supabase.rpc('crear_pedido', {
+        p_store_id: store.id,
+        p_nombre_cliente: form.nombre,
+        p_whatsapp_cliente: form.whatsapp,
+        p_metodo_entrega: deliveryMethod,
+        p_direccion_entrega: deliveryMethod === 'shipping' ? direccion : null,
+        p_gps_url: gpsUrl,
+        p_total_usd: getTotal('USD'),
+        p_total_bs: getTotal('BS'),
+        p_moneda_activa: currency,
+        p_items: cart.map(item => ({
+          producto_id: item.id,
+          nombre_producto: item.name,
+          cantidad: item.qty,
+          precio_unitario: item.price,
+          comentario: item.comment || null,
+          opciones_seleccionadas: item.selectedOptions || null
+        }))
+      })
+
+      if (rpcError) throw rpcError
+      console.log('Pedido guardado exitosamente con ID:', pedidoId)
+    } catch (dbErr) {
+      console.error('Error al guardar el pedido en Supabase:', dbErr)
+      toast.error('Ocurrió un inconveniente al registrar la orden, procediendo con WhatsApp...', {
+        duration: 5000
+      })
+    }
 
     // Formatear el número de whatsapp de la tienda
     const storeWhatsapp = store?.whatsapp || '584245305968';
@@ -225,7 +257,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
 
                                 <div className="flex-1">
                                   <h4 className="font-medium text-gray-800 text-sm">{product.name}</h4>
-                                  
+
                                   {/* Modificadores Seleccionados */}
                                   {product.selectedOptions && product.selectedOptions.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-1">
@@ -252,7 +284,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                   <p className="text-xs text-rose-400 my-2 font-light">
                                     Unitario: {unitPrice(product)} {symbol}
                                   </p>
-                                  
+
                                   <div className="flex items-center border border-rose-100 rounded-lg overflow-hidden w-fit">
                                     <button
                                       onClick={() => updateQuantity(product.cartItemId, -1)}
@@ -353,12 +385,12 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                 className="w-full px-4 py-3 rounded-xl border border-rose-200 focus:ring-2 focus:ring-rose-400 outline-none text-sm resize-none"
                                 onChange={e => setDireccion(e.target.value)}
                               />
-                              
+
                               <div className="bg-white rounded-xl p-3 border border-rose-100 space-y-2">
                                 <div className="flex justify-between items-center">
                                   <span className="text-[11px] font-semibold text-rose-800">📍 Ubicación GPS (Recomendado)</span>
                                   {gpsLocation && (
-                                    <button 
+                                    <button
                                       type="button"
                                       onClick={() => setGpsLocation(null)}
                                       className="text-[10px] text-rose-400 hover:text-rose-600 hover:underline"
@@ -367,7 +399,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                     </button>
                                   )}
                                 </div>
-                                
+
                                 {!gpsLocation ? (
                                   <button
                                     type="button"
@@ -393,14 +425,14 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                     <div className="text-[10px] text-emerald-600 bg-emerald-50 py-0.5 px-2 rounded w-fit font-medium flex items-center gap-1">
                                       <span>✓</span> Ubicación GPS guardada
                                     </div>
-                                    <iframe 
+                                    <iframe
                                       title="Ubicación de entrega"
-                                      width="100%" 
-                                      height="130" 
-                                      frameBorder="0" 
-                                      scrolling="no" 
-                                      marginHeight="0" 
-                                      marginWidth="0" 
+                                      width="100%"
+                                      height="130"
+                                      frameBorder="0"
+                                      scrolling="no"
+                                      marginHeight="0"
+                                      marginWidth="0"
                                       src={`https://www.openstreetmap.org/export/embed.html?bbox=${gpsLocation.lng - 0.002}%2C${gpsLocation.lat - 0.001}%2C${gpsLocation.lng + 0.002}%2C${gpsLocation.lat + 0.001}&layer=mapnik&marker=${gpsLocation.lat}%2C${gpsLocation.lng}`}
                                       className="rounded-lg border border-slate-100 shadow-inner"
                                     />

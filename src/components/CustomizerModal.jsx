@@ -1,38 +1,17 @@
 import React, { useState, useEffect } from 'react'
 import { X, ShoppingBag } from 'lucide-react'
-import { supabase } from '../utils/supabase'
 
 const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
-  const [loading, setLoading] = useState(false)
   const [optionGroups, setOptionGroups] = useState([])
   const [selectedOptions, setSelectedOptions] = useState({}) // Key: group_id, Value: Array of option objects
   const [comment, setComment] = useState('')
+  const loading = false
 
   useEffect(() => {
-    if (!isOpen || !product?.id) return
-
-    const fetchOptions = async () => {
-      setLoading(true)
-      try {
-        const { data, error } = await supabase
-          .from('producto_opciones_grupo')
-          .select('*, producto_opciones_valor(*)')
-          .eq('producto_id', product.id)
-
-        if (error) throw error
-        setOptionGroups(data || [])
-        
-        // Reset selections
-        setSelectedOptions({})
-        setComment('')
-      } catch (err) {
-        console.error('Error al cargar modificadores:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchOptions()
+    if (!isOpen) return
+    setOptionGroups(product?.optionGroups || [])
+    setSelectedOptions({})
+    setComment('')
   }, [isOpen, product])
 
   if (!isOpen) return null

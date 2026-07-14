@@ -1,0 +1,1 @@
+INSERT INTO "public"."producto_grupo_relacion" ("producto_id", "grupo_id", "orden") VALUES (14, '91139e5e-19b1-445f-bf82-3070309a27d7', 1), (15, '91139e5e-19b1-445f-bf82-3070309a27d7', 1);

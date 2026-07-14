@@ -1,4 +1,5 @@
 import React from 'react'
+import { Link } from 'react-router-dom'
 import { useCurrency } from '../context/CurrencyContext'
 
 const Footer = () => {
@@ -23,6 +24,7 @@ const Footer = () => {
                         <li><a href="#" className="hover:text-rose-400">Preguntas Frecuentes</a></li>
                         <li><a href="#" className="hover:text-rose-400">Envíos a Domicilio</a></li>
                         <li><a href="#" className="hover:text-rose-400">Pedidos Especiales</a></li>
+                        <li><Link to="/login" className="hover:text-rose-400">Administración</Link></li>
                     </ul>
                 </div>
 

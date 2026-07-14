@@ -58,14 +58,14 @@ const ProductList = () => {
         if (activeCategory !== 'Todos') {
           query = supabase
             .from('producto')
-            .select('*, category:category!producto_category_fkey!inner(name), ProductImagen(*)', { count: 'exact' })
+            .select('*, category:category!producto_category_fkey!inner(name), ProductImagen(*), producto_grupo_relacion(orden, producto_opciones_grupo(id,nombre,es_obligatorio,es_multiple,producto_opciones_valor(id,nombre,modificador_precio,modificador_precio_comparacion)))', { count: 'exact' })
             .eq('store', store.id)
             .eq('is_active', true)
             .eq('category.name', activeCategory);
         } else {
           query = supabase
             .from('producto')
-            .select('*, category:category!producto_category_fkey(name), ProductImagen(*)', { count: 'exact' })
+            .select('*, category:category!producto_category_fkey(name), ProductImagen(*), producto_grupo_relacion(orden, producto_opciones_grupo(id,nombre,es_obligatorio,es_multiple,producto_opciones_valor(id,nombre,modificador_precio,modificador_precio_comparacion)))', { count: 'exact' })
             .eq('store', store.id)
             .eq('is_active', true);
         }
@@ -78,9 +78,30 @@ const ProductList = () => {
 
         // Mapear los productos al formato requerido por la UI
         const mapped = (data || []).map(product => {
-          const priceNum = parseFloat(product.price) || 0;
-          const comparePriceNum = product.compare_price ? parseFloat(product.compare_price) : null;
+          // Extraer y ordenar los grupos de opciones de la relación muchos a muchos
+          const sortedRel = [...(product.producto_grupo_relacion || [])]
+            .sort((a, b) => (a.orden ?? 1) - (b.orden ?? 1));
           
+          const optionGroups = sortedRel
+            .map(rel => rel.producto_opciones_grupo)
+            .filter(Boolean);
+
+          let priceNum = parseFloat(product.price) || 0;
+          let comparePriceNum = product.compare_price ? parseFloat(product.compare_price) : null;
+          
+          if (product.precio_por_tamano && optionGroups.length > 0) {
+            const sizeGroup = optionGroups.find(g => g.es_obligatorio && !g.es_multiple) || optionGroups[0];
+            if (sizeGroup && sizeGroup.producto_opciones_valor?.length > 0) {
+              const prices = sizeGroup.producto_opciones_valor.map(v => parseFloat(v.modificador_precio) || 0);
+              const minPrice = Math.min(...prices);
+              priceNum = minPrice;
+
+              const minPriceIndex = prices.indexOf(minPrice);
+              const matchingComparePrice = sizeGroup.producto_opciones_valor[minPriceIndex]?.modificador_precio_comparacion;
+              comparePriceNum = matchingComparePrice ? parseFloat(matchingComparePrice) : null;
+            }
+          }
+
           const exchange = exchangeRate || 1;
           const price_bs = priceNum * exchange;
           const compare_price_bs = comparePriceNum ? comparePriceNum * exchange : null;
@@ -96,14 +117,21 @@ const ProductList = () => {
             is_main: img.is_primary
           })) || [];
 
+          const hasModifiers = optionGroups.length > 0;
+
           return {
             ...product,
             name: product.name || product.sku || 'Producto sin nombre',
             category: product.category?.name || 'Varios',
+            price: priceNum,
+            compare_price: comparePriceNum,
             price_bs,
             compare_price_bs,
             discount_percent,
-            images
+            images,
+            precio_por_tamano: product.precio_por_tamano,
+            hasModifiers,
+            optionGroups
           };
         });
 

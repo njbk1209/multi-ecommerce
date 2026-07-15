@@ -13,17 +13,46 @@ import {
   RefreshCw, 
   TrendingUp, 
   DollarSign, 
-  Phone
+  Phone,
+  Package,
+  Truck
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { supabase } from '../utils/supabase'
 import { useCurrency } from '../context/CurrencyContext'
 
+const normalizeEstado = (estado) => {
+  if (estado === 'preparando') return 'preparar'
+  if (estado === 'completado') return 'finalizado'
+  return estado
+}
+
+const getStatusLabel = (estado) => {
+  switch (estado) {
+    case 'pendiente': return 'Pendiente'
+    case 'preparar': return 'Preparando'
+    case 'en espera de retiro': return 'En espera de retiro'
+    case 'en camino': return 'En camino'
+    case 'finalizado': return 'Finalizado con éxito'
+    case 'cancelado': return 'Cancelado'
+    default: return estado
+  }
+}
+
+const ALLOWED_TRANSITIONS = {
+  'pendiente': ['preparar', 'cancelado'],
+  'preparar': ['en espera de retiro'],
+  'en espera de retiro': ['en camino', 'finalizado', 'cancelado'],
+  'en camino': ['finalizado'],
+  'finalizado': [],
+  'cancelado': []
+}
+
 const AdminDashboard = ({ onLogout, session }) => {
   const navigate = useNavigate()
   const { store } = useCurrency()
   const [orders, setOrders] = useState([])
-  const [filter, setFilter] = useState('all') // 'all' | 'pendiente' | 'preparando' | 'completado' | 'cancelado'
+  const [filter, setFilter] = useState('all') // 'all' | 'pendiente' | 'preparar' | 'en espera de retiro' | 'en camino' | 'finalizado' | 'cancelado'
   const [expandedOrders, setExpandedOrders] = useState({})
   const [isRefreshing, setIsRefreshing] = useState(false)
 
@@ -45,11 +74,15 @@ const AdminDashboard = ({ onLogout, session }) => {
 
       if (error) throw error
       
-      setOrders(data || [])
+      const normalizedData = (data || []).map(order => ({
+        ...order,
+        estado: normalizeEstado(order.estado)
+      }))
+      setOrders(normalizedData)
       
       // Auto-expandir el primer pedido si existe y no hay nada expandido
-      if (data && data.length > 0 && Object.keys(expandedOrders).length === 0) {
-        setExpandedOrders({ [data[0].id]: true })
+      if (normalizedData && normalizedData.length > 0 && Object.keys(expandedOrders).length === 0) {
+        setExpandedOrders({ [normalizedData[0].id]: true })
       }
 
       if (showToast) {
@@ -79,6 +112,17 @@ const AdminDashboard = ({ onLogout, session }) => {
 
   // Cambiar el estado de un pedido en la base de datos
   const handleUpdateStatus = async (orderId, newStatus) => {
+    const order = orders.find(o => o.id === orderId)
+    if (!order) return
+
+    const allowed = ALLOWED_TRANSITIONS[order.estado] || []
+    if (!allowed.includes(newStatus)) {
+      toast.error(`Transición de ${getStatusLabel(order.estado)} a ${getStatusLabel(newStatus)} no permitida.`, {
+        style: { background: '#18181b', color: '#fff', borderRadius: '12px' }
+      })
+      return
+    }
+
     try {
       const { error } = await supabase
         .from('pedido')
@@ -88,11 +132,11 @@ const AdminDashboard = ({ onLogout, session }) => {
       if (error) throw error
 
       setOrders(prevOrders => 
-        prevOrders.map(order => 
-          order.id === orderId ? { ...order, estado: newStatus } : order
+        prevOrders.map(o => 
+          o.id === orderId ? { ...o, estado: newStatus } : o
         )
       )
-      toast.success(`Pedido #${orderId} cambiado a: ${newStatus}`, {
+      toast.success(`Pedido #${orderId} cambiado a: ${getStatusLabel(newStatus)}`, {
         style: { background: '#18181b', color: '#fff', borderRadius: '12px' }
       })
     } catch (err) {
@@ -114,8 +158,11 @@ const AdminDashboard = ({ onLogout, session }) => {
   // Cálculos de métricas globales en tiempo real
   const totalOrdersCount = orders.length
   const pendingCount = orders.filter(o => o.estado === 'pendiente').length
-  const preparingCount = orders.filter(o => o.estado === 'preparando').length
-  const completedCount = orders.filter(o => o.estado === 'completado').length
+  const prepararCount = orders.filter(o => o.estado === 'preparar').length
+  const esperaCount = orders.filter(o => o.estado === 'en espera de retiro').length
+  const enCaminoCount = orders.filter(o => o.estado === 'en camino').length
+  const finalizadoCount = orders.filter(o => o.estado === 'finalizado').length
+  const canceladoCount = orders.filter(o => o.estado === 'cancelado').length
 
   // Calcular ingresos totales sumando los pedidos que no están cancelados
   const revenueUSD = orders
@@ -241,9 +288,11 @@ const AdminDashboard = ({ onLogout, session }) => {
             {[
               { id: 'all', label: 'Todos' },
               { id: 'pendiente', label: `Pendientes (${pendingCount})` },
-              { id: 'preparando', label: `Preparando (${preparingCount})` },
-              { id: 'completado', label: `Completados (${completedCount})` },
-              { id: 'cancelado', label: 'Cancelados' }
+              { id: 'preparar', label: `Preparar (${prepararCount})` },
+              { id: 'en espera de retiro', label: `Espera Retiro (${esperaCount})` },
+              { id: 'en camino', label: `En Camino (${enCaminoCount})` },
+              { id: 'finalizado', label: `Finalizados (${finalizadoCount})` },
+              { id: 'cancelado', label: `Cancelados (${canceladoCount})` }
             ].map(btn => (
               <button
                 key={btn.id}
@@ -274,8 +323,10 @@ const AdminDashboard = ({ onLogout, session }) => {
               // Estado Badge Styles
               let statusBg = 'bg-zinc-100 text-zinc-700 border-zinc-200'
               if (order.estado === 'pendiente') statusBg = 'bg-amber-50 text-amber-700 border-amber-100'
-              if (order.estado === 'preparando') statusBg = 'bg-blue-50 text-blue-700 border-blue-100'
-              if (order.estado === 'completado') statusBg = 'bg-emerald-50 text-emerald-700 border-emerald-100'
+              if (order.estado === 'preparar') statusBg = 'bg-blue-50 text-blue-700 border-blue-100'
+              if (order.estado === 'en espera de retiro') statusBg = 'bg-indigo-50 text-indigo-700 border-indigo-100'
+              if (order.estado === 'en camino') statusBg = 'bg-purple-50 text-purple-700 border-purple-100'
+              if (order.estado === 'finalizado') statusBg = 'bg-emerald-50 text-emerald-700 border-emerald-100'
               if (order.estado === 'cancelado') statusBg = 'bg-rose-50 text-rose-700 border-rose-100'
 
               return (
@@ -295,7 +346,7 @@ const AdminDashboard = ({ onLogout, session }) => {
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-zinc-900 text-sm md:text-base">#{order.id}</span>
                         <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border ${statusBg}`}>
-                          {order.estado}
+                          {getStatusLabel(order.estado)}
                         </span>
                       </div>
                       <p className="text-xs text-zinc-400 font-medium">{formatDate(order.created_at)}</p>
@@ -379,38 +430,68 @@ const AdminDashboard = ({ onLogout, session }) => {
                         <div className="space-y-2">
                           <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500">Acciones del Pedido</h4>
                           <div className="flex flex-wrap gap-2">
-                            {order.estado !== 'pendiente' && (
-                              <button 
-                                onClick={() => handleUpdateStatus(order.id, 'pendiente')}
-                                className="px-3.5 py-2 text-xs font-semibold border border-zinc-200 hover:border-zinc-900 bg-white text-zinc-600 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-1.5 active:scale-95"
-                              >
-                                <Clock className="w-3.5 h-3.5" /> Pendiente
-                              </button>
-                            )}
-                            {order.estado !== 'preparando' && order.estado !== 'completado' && order.estado !== 'cancelado' && (
-                              <button 
-                                onClick={() => handleUpdateStatus(order.id, 'preparando')}
-                                className="px-3.5 py-2 text-xs font-semibold border border-zinc-200 hover:border-zinc-900 bg-white text-zinc-600 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-1.5 active:scale-95"
-                              >
-                                🧑‍🍳 Preparar
-                              </button>
-                            )}
-                            {order.estado !== 'completado' && order.estado !== 'cancelado' && (
-                              <button 
-                                onClick={() => handleUpdateStatus(order.id, 'completado')}
-                                className="px-3.5 py-2 text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl transition-all flex items-center gap-1.5 active:scale-95 shadow-sm hover:shadow"
-                              >
-                                <CheckCircle className="w-3.5 h-3.5" /> Completar
-                              </button>
-                            )}
-                            {order.estado !== 'cancelado' && order.estado !== 'completado' && (
-                              <button 
-                                onClick={() => handleUpdateStatus(order.id, 'cancelado')}
-                                className="px-3.5 py-2 text-xs font-semibold border border-rose-200 hover:border-rose-400 bg-rose-50/50 hover:bg-rose-50 text-rose-600 rounded-xl transition-all flex items-center gap-1.5 active:scale-95"
-                              >
-                                <XCircle className="w-3.5 h-3.5" /> Cancelar
-                              </button>
-                            )}
+                            {(() => {
+                              const allowed = ALLOWED_TRANSITIONS[order.estado] || []
+                              if (allowed.length === 0) {
+                                return (
+                                  <p className="text-xs font-medium text-zinc-400 italic">
+                                    Este pedido está en un estado final y no admite más cambios.
+                                  </p>
+                                )
+                              }
+                              return (
+                                <>
+                                  {allowed.includes('pendiente') && (
+                                    <button 
+                                      onClick={() => handleUpdateStatus(order.id, 'pendiente')}
+                                      className="px-3.5 py-2 text-xs font-semibold border border-zinc-200 hover:border-zinc-900 bg-white text-zinc-600 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-1.5 active:scale-95"
+                                    >
+                                      <Clock className="w-3.5 h-3.5" /> Pendiente
+                                    </button>
+                                  )}
+                                  {allowed.includes('preparar') && (
+                                    <button 
+                                      onClick={() => handleUpdateStatus(order.id, 'preparar')}
+                                      className="px-3.5 py-2 text-xs font-semibold border border-zinc-200 hover:border-zinc-900 bg-white text-zinc-600 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-1.5 active:scale-95"
+                                    >
+                                      🍳 Preparar
+                                    </button>
+                                  )}
+                                  {allowed.includes('en espera de retiro') && (
+                                    <button 
+                                      onClick={() => handleUpdateStatus(order.id, 'en espera de retiro')}
+                                      className="px-3.5 py-2 text-xs font-semibold border border-zinc-200 hover:border-zinc-900 bg-white text-zinc-600 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-1.5 active:scale-95"
+                                    >
+                                      <Package className="w-3.5 h-3.5" /> Espera Retiro
+                                    </button>
+                                  )}
+                                  {allowed.includes('en camino') && (
+                                    <button 
+                                      onClick={() => handleUpdateStatus(order.id, 'en camino')}
+                                      className="px-3.5 py-2 text-xs font-semibold border border-zinc-200 hover:border-zinc-900 bg-white text-zinc-600 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-1.5 active:scale-95"
+                                    >
+                                      <Truck className="w-3.5 h-3.5" /> En Camino
+                                    </button>
+                                  )}
+                                  {allowed.includes('finalizado') && (
+                                    <button 
+                                      onClick={() => handleUpdateStatus(order.id, 'finalizado')}
+                                      className="px-3.5 py-2 text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl transition-all flex items-center gap-1.5 active:scale-95 shadow-sm hover:shadow"
+                                    >
+                                      <CheckCircle className="w-3.5 h-3.5" /> Finalizar
+                                    </button>
+                                  )}
+                                  {allowed.includes('cancelado') && (
+                                    <button 
+                                      onClick={() => handleUpdateStatus(order.id, 'cancelado')}
+                                      className="px-3.5 py-2 text-xs font-semibold border border-rose-200 hover:border-rose-400 bg-rose-50/50 hover:bg-rose-50 text-rose-600 rounded-xl transition-all flex items-center gap-1.5 active:scale-95"
+                                    >
+                                      <XCircle className="w-3.5 h-3.5" /> Cancelar
+                                    </button>
+                                  )}
+                                </>
+                              )
+                            })()}
                           </div>
                         </div>
 

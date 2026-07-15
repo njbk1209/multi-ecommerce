@@ -9,7 +9,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '../utils/supabase'
 
 
-const buildWhatsAppMessage = ({ nombre, whatsapp, cart, total, symbol, deliveryMethod, direccion, gpsUrl }) => {
+const buildWhatsAppMessage = ({ nombre, whatsapp, cart, totalUSD, totalBS, deliveryMethod, direccion, gpsUrl }) => {
   const lineas = cart
     .map(item => {
       let itemStr = `• ${item.qty}x ${item.name}`
@@ -43,7 +43,7 @@ const buildWhatsAppMessage = ({ nombre, whatsapp, cart, total, symbol, deliveryM
 
   mensaje +=
     `%0A*Productos:*%0A${lineas}%0A%0A` +
-    `*Total a pagar:* ${total.toFixed(2)} ${symbol}%0A%0A` +
+    `*Total a pagar:* ${totalUSD.toFixed(2)} $ / ${totalBS.toFixed(2)} Bs.%0A%0A` +
     `_Enviado desde la web_`
 
   return mensaje
@@ -128,8 +128,8 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
       nombre: form.nombre,
       whatsapp: form.whatsapp,
       cart,
-      total,
-      symbol,
+      totalUSD: getTotal('USD'),
+      totalBS: getTotal('BS'),
       deliveryMethod,
       direccion,
       gpsUrl

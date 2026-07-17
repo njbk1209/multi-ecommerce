@@ -89,11 +89,25 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
     }
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const { latitude, longitude } = position.coords
         setGpsLocation({ lat: latitude, lng: longitude })
-        setGeoLoading(false)
-        toast.success('📍 Ubicación obtenida con éxito.')
+        
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`,
+            { headers: { 'Accept-Language': 'es' } } // Forzar respuesta en español si está disponible
+          )
+          const data = await response.json()
+          if (data && data.display_name) {
+            setDireccion(data.display_name)
+          }
+        } catch (err) {
+          console.error('Error al obtener dirección desde coordenadas:', err)
+        } finally {
+          setGeoLoading(false)
+          toast.success('📍 Ubicación obtenida y dirección autocompletada.')
+        }
       },
       (error) => {
         console.error(error)

@@ -9,8 +9,8 @@ const About = () => {
                 <div className="w-full md:w-1/2 relative">
                     <div className="aspect-square bg-rose-100 rounded-2xl overflow-hidden shadow-sm group">
                         <img
-                            src='https://aprende.com/wp-content/uploads/2021/10/curso-online-de-reposteria.jpg'
-                            alt="Nuestro trabajo"
+                            src='https://images.unsplash.com/photo-1574071318508-1cdbab80d002?q=80&w=800&auto=format&fit=crop'
+                            alt="Nuestras Pizzas Napolitanas"
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                         />
                     </div>
@@ -28,19 +28,19 @@ const About = () => {
 
                     <div className="space-y-4 text-slate-600/80 text-lg leading-relaxed">
                         <p>
-                            En la ciudad de <strong>Guanare, Portuguesa</strong>, nació nuestra pasión por transformar ingredientes sencillos en experiencias inolvidables.
+                            En la ciudad de <strong>Guanare, Portuguesa</strong>, nació nuestra pasión por traer el verdadero sabor y tradición de Nápoles a tu mesa.
                         </p>
                         <p>
-                            Lo que comenzó como un sueño en nuestra cocina familiar, se ha convertido en un rincón dedicado al detalle, donde cada postre cuenta una historia de tradición y dedicación artesanal.
+                            Lo que comenzó como una fascinación por el arte de la panificación y el fuego a leña, se ha convertido en una pizzería dedicada a la masa de fermentación lenta (más de 24 horas) y la cocción a alta temperatura, donde cada pizza cuenta una historia de dedicación artesanal.
                         </p>
                         <p>
-                            Creemos que lo dulce no solo alimenta el cuerpo, sino también el alma. Por eso, cada receta es elaborada con amor y orgullo llanero.
+                            Creemos que una buena pizza no solo alimenta el cuerpo, sino también el alma. Por eso, cada receta es elaborada con amor, orgullo llanero e ingredientes auténticos.
                         </p>
                     </div>
 
                     <div className="mt-8 flex items-center gap-2 text-rose-500 font-serif italic">
                         <span className="h-px w-8 bg-rose-200"></span>
-                        <span>Hecho en Guanare con orgullo</span>
+                        <span>Horneado en Guanare con orgullo</span>
                     </div>
                 </div>
 

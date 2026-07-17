@@ -1,10 +1,21 @@
 @import "tailwindcss";
 
 @theme {
-  /* Aquí defines tu paleta personalizada */
-  --color-pastel-pink: #fff0f5;
-  --color-soft-rose: #fbce8a;
-  
-  /* Puedes extender o modificar fuentes también */
-  --font-serif: "Playfair Display", serif;
+  --color-brand-primary: var(--color-primary);
+  --color-brand-secondary: var(--color-secondary);
+  --color-brand-accent: var(--color-accent);
+
+  --color-rose-50: var(--theme-rose-50);
+  --color-rose-100: var(--theme-rose-100);
+  --color-rose-200: var(--theme-rose-200);
+  --color-rose-300: var(--theme-rose-300);
+  --color-rose-400: var(--theme-rose-400);
+  --color-rose-500: var(--theme-rose-500);
+  --color-rose-600: var(--theme-rose-600);
+  --color-rose-700: var(--theme-rose-700);
+  --color-rose-800: var(--theme-rose-800);
+  --color-rose-900: var(--theme-rose-900);
+  --color-rose-950: var(--theme-rose-950);
+  --font-serif: var(--font-family), serif;
+  --font-brand: var(--font-family), sans-serif;
 }

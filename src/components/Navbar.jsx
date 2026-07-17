@@ -10,21 +10,19 @@ const CurrencyToggle = () => {
     <div className="flex items-center bg-rose-50 border border-rose-100 rounded-full p-0.5 text-xs font-semibold uppercase tracking-wider">
       <button
         onClick={() => setCurrency('USD')}
-        className={`px-3 py-1 rounded-full transition-all duration-200 ${
-          currency === 'USD'
-            ? 'bg-rose-400 text-white shadow-sm'
-            : 'text-rose-300 hover:text-rose-400'
-        }`}
+        className={`px-3 py-1 rounded-full transition-all duration-200 ${currency === 'USD'
+          ? 'bg-rose-400 text-white shadow-sm'
+          : 'text-rose-300 hover:text-rose-400'
+          }`}
       >
         Dólar
       </button>
       <button
         onClick={() => setCurrency('BS')}
-        className={`px-3 py-1 rounded-full transition-all duration-200 ${
-          currency === 'BS'
-            ? 'bg-rose-400 text-white shadow-sm'
-            : 'text-rose-300 hover:text-rose-400'
-        }`}
+        className={`px-3 py-1 rounded-full transition-all duration-200 ${currency === 'BS'
+          ? 'bg-rose-400 text-white shadow-sm'
+          : 'text-rose-300 hover:text-rose-400'
+          }`}
       >
         Bolivares
       </button>
@@ -48,8 +46,14 @@ const Navbar = () => {
 
       <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-rose-100 px-6 py-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <div className="text-2xl font-serif font-semibold text-rose-500 tracking-tight cursor-pointer">
-            {store?.comercial_name || 'Postrecito'}<span className="text-rose-300">.</span>
+          <div className="flex items-center gap-2 text-2xl font-serif font-semibold text-rose-500 tracking-tight cursor-pointer">
+            {store?.logo_url ? (
+              <img src={store.logo_url} alt={store?.comercial_name || 'Logo'} className="h-8 w-auto object-contain" />
+            ) : (
+              <>
+                {store?.comercial_name || 'Postrecito'}<span className="text-rose-300">.</span>
+              </>
+            )}
           </div>
 
           <div className="hidden md:flex gap-8 text-sm font-medium text-gray-600 uppercase tracking-widest">

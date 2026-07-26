@@ -139,12 +139,12 @@ export default function OptionsManager() {
       const { error: deleteError } = await supabase
         .from('producto_opciones_valor')
         .delete()
-        .eq('grupo', groupId)
+        .eq('grupo_id', groupId)
 
       if (deleteError) throw deleteError
 
       const valuesPayload = activeValues.map(v => ({
-        grupo: groupId,
+        grupo_id: groupId,
         nombre: v.nombre.trim(),
         modificador_precio: parseFloat(v.modificador_precio) || 0,
         modificador_precio_comparacion: v.modificador_precio_comparacion ? parseFloat(v.modificador_precio_comparacion) : null

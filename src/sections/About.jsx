@@ -2,7 +2,7 @@ import React from 'react';
 
 const About = () => {
     return (
-        <section className="bg-white py-20 px-6">
+        <section id="nosotros" className="bg-white py-20 px-6">
             <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center gap-12">
 
                 {/* Lado de la imagen o Decoración Visual */}

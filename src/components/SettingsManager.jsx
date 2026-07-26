@@ -106,8 +106,15 @@ export default function SettingsManager() {
       let finalLogoUrl = logoUrl
       if (logoFile) {
         const fileExt = logoFile.name.split('.').pop()
-        const fileName = `logo-${store.id}-${Date.now()}.${fileExt}`
-        const filePath = `branding/${fileName}`
+        const storeFolderName = store?.comercial_name
+          ? store.comercial_name
+              .toLowerCase()
+              .trim()
+              .replace(/\s+/g, '-')
+              .replace(/[^\w\-]+/g, '')
+          : `store-${store.id}`
+        const fileName = `logo-${Date.now()}.${fileExt}`
+        const filePath = `${storeFolderName}/branding/${fileName}`
 
         const { error: uploadError } = await supabase.storage
           .from('productos')

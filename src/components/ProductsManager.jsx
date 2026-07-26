@@ -1,29 +1,49 @@
-import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, Edit3, X, Loader2, Image as ImageIcon, ToggleLeft, ToggleRight } from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { Plus, Trash2, Edit3, X, Loader2, Image as ImageIcon, Building2, Star, Link as LinkIcon, Check } from 'lucide-react'
 import { supabase } from '../utils/supabase'
 import { useCurrency } from '../context/CurrencyContext'
 import toast from 'react-hot-toast'
+import { buildCategoryTree } from './CategoriesManager'
+
+const slugify = (text) => {
+  if (!text) return ''
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/[^\w\-]+/g, '')
+    .replace(/\-\-+/g, '-')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
+}
 
 export default function ProductsManager() {
   const { store } = useCurrency()
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
+  const [branches, setBranches] = useState([])
+  const [branchStockMap, setBranchStockMap] = useState({}) // { producto_id: [ { sucursal_id, nombre, stock, stock_status } ] }
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState(null)
 
   // Form fields
   const [name, setName] = useState('')
+  const [slug, setSlug] = useState('')
+  const [slugAutoModified, setSlugAutoModified] = useState(false)
   const [categoryId, setCategoryId] = useState('')
   const [sku, setSku] = useState('')
   const [price, setPrice] = useState('')
   const [comparePrice, setComparePrice] = useState('')
-  const [stock, setStock] = useState('999')
+  const [branchStocksInput, setBranchStocksInput] = useState({}) // { sucursal_id: stock_val }
   const [description, setDescription] = useState('')
   const [isActive, setIsActive] = useState(true)
-  const [imageUrl, setImageUrl] = useState('')
-  const [imageFile, setImageFile] = useState(null)
-  const [previewUrl, setPreviewUrl] = useState('')
+  
+  // Lista de Imágenes { id?: string, url: string, is_primary: boolean, file?: File }
+  const [imageList, setImageList] = useState([])
+  const [newUrlInput, setNewUrlInput] = useState('')
+
   const [barcode, setBarcode] = useState('')
   const [tax, setTax] = useState('0')
   const [precioPorTamano, setPrecioPorTamano] = useState(false)
@@ -31,12 +51,16 @@ export default function ProductsManager() {
   const [selectedGroupIds, setSelectedGroupIds] = useState([])
   const [submitting, setSubmitting] = useState(false)
 
-  // Fetch products and categories
+  const categoryTree = useMemo(() => {
+    return buildCategoryTree(categories, null, 0)
+  }, [categories])
+
+  // Fetch products, categories, branches & stocks
   const fetchData = async () => {
     if (!store?.id) return
     setLoading(true)
     try {
-      // 1. Cargar categorías para el selector
+      // 1. Cargar categorías
       const { data: catData, error: catError } = await supabase
         .from('category')
         .select('*')
@@ -46,7 +70,18 @@ export default function ProductsManager() {
       if (catError) throw catError
       setCategories(catData || [])
 
-      // 2. Cargar productos con relaciones (incluyendo producto_grupo_relacion)
+      // 2. Cargar sucursales
+      const { data: branchData, error: branchErr } = await supabase
+        .from('sucursal')
+        .select('*')
+        .eq('store_id', store.id)
+        .order('es_principal', { ascending: false })
+        .order('nombre', { ascending: true })
+
+      if (branchErr) throw branchErr
+      setBranches(branchData || [])
+
+      // 3. Cargar productos
       const { data: prodData, error: prodError } = await supabase
         .from('producto')
         .select(`
@@ -61,7 +96,34 @@ export default function ProductsManager() {
       if (prodError) throw prodError
       setProducts(prodData || [])
 
-      // 3. Cargar grupos de opciones disponibles en la tienda
+      // 4. Cargar desglose de stock por sucursal
+      const branchIds = (branchData || []).map(b => b.id)
+      if (branchIds.length > 0) {
+        const { data: pssData, error: pssError } = await supabase
+          .from('producto_stock_sucursal')
+          .select('*')
+          .in('sucursal_id', branchIds)
+
+        if (pssError) {
+          console.error('Error al cargar stock por sucursal:', pssError)
+        } else {
+          const map = {}
+          const branchNames = {}
+          ;(branchData || []).forEach(b => { branchNames[b.id] = b.nombre })
+          ;(pssData || []).forEach(item => {
+            if (!map[item.producto_id]) map[item.producto_id] = []
+            map[item.producto_id].push({
+              sucursal_id: item.sucursal_id,
+              sucursal_nombre: branchNames[item.sucursal_id] || 'Sucursal',
+              stock: item.stock,
+              stock_status: item.stock_status
+            })
+          })
+          setBranchStockMap(map)
+        }
+      }
+
+      // 5. Cargar grupos de opciones
       const { data: optGroupsData, error: optGroupsError } = await supabase
         .from('producto_opciones_grupo')
         .select('id, nombre')
@@ -72,7 +134,7 @@ export default function ProductsManager() {
       setAllOptionGroups(optGroupsData || [])
     } catch (err) {
       console.error('Error al cargar datos:', err)
-      toast.error('No se pudieron cargar los productos.')
+      toast.error('No se pudieron cargar los datos del catálogo.')
     } finally {
       setLoading(false)
     }
@@ -82,19 +144,40 @@ export default function ProductsManager() {
     fetchData()
   }, [store?.id])
 
+  const handleNameChange = (e) => {
+    const val = e.target.value
+    setName(val)
+    if (!slugAutoModified) {
+      setSlug(slugify(val))
+    }
+  }
+
+  const handleSlugChange = (e) => {
+    setSlugAutoModified(true)
+    setSlug(e.target.value)
+  }
+
   const handleOpenCreate = () => {
     setEditingProduct(null)
     setName('')
+    setSlug('')
+    setSlugAutoModified(false)
     setCategoryId(categories[0]?.id || '')
     setSku('PROD-' + Math.floor(100000 + Math.random() * 900000))
     setPrice('')
     setComparePrice('')
-    setStock('999')
+    
+    // Inicializar inputs de stock por sucursal con 999 por defecto
+    const initialStocks = {}
+    branches.forEach(b => {
+      initialStocks[b.id] = '999'
+    })
+    setBranchStocksInput(initialStocks)
+
     setDescription('')
     setIsActive(true)
-    setImageUrl('')
-    setImageFile(null)
-    setPreviewUrl('')
+    setImageList([])
+    setNewUrlInput('')
     setSelectedGroupIds([])
     setBarcode('')
     setTax('0')
@@ -104,50 +187,111 @@ export default function ProductsManager() {
 
   const handleOpenEdit = (product) => {
     setEditingProduct(product)
-    setName(product.name)
+    setName(product.name || '')
+    setSlug(product.slug || slugify(product.name || ''))
+    setSlugAutoModified(true)
     setCategoryId(product.category?.id || '')
     setSku(product.sku || '')
     setPrice(product.price ? product.price.toString() : '')
     setComparePrice(product.compare_price ? product.compare_price.toString() : '')
-    setStock(product.stock ? product.stock.toString() : '0')
+    
+    // Cargar stock por sucursal existente
+    const stocks = {}
+    const pss = branchStockMap[product.id] || []
+    branches.forEach(b => {
+      const match = pss.find(item => item.sucursal_id === b.id)
+      stocks[b.id] = match ? match.stock.toString() : '0'
+    })
+    setBranchStocksInput(stocks)
+
     setDescription(product.description || '')
     setIsActive(product.is_active)
     setBarcode(product.barcode || '')
     setTax(product.tax ? product.tax.toString() : '0')
     setPrecioPorTamano(product.precio_por_tamano || false)
     setSelectedGroupIds(product.producto_grupo_relacion?.map(rel => rel.grupo_id) || [])
-    setImageFile(null)
 
-    // Obtener imagen principal
-    const mainImg = product.ProductImagen?.find(img => img.is_primary) || product.ProductImagen?.[0]
-    const url = mainImg ? mainImg.url : ''
-    setImageUrl(url)
-    setPreviewUrl(url)
+    // Cargar imágenes existentes
+    const existingImages = (product.ProductImagen || []).map(img => ({
+      id: img.id,
+      url: img.url,
+      is_primary: img.is_primary
+    }))
 
+    // Asegurar que al menos una sea principal si existen imágenes
+    if (existingImages.length > 0 && !existingImages.some(img => img.is_primary)) {
+      existingImages[0].is_primary = true
+    }
+
+    setImageList(existingImages)
+    setNewUrlInput('')
     setModalOpen(true)
   }
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
+  // Manejador de selección múltiple de archivos de imagen
+  const handleMultipleFilesChange = (e) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
 
-    if (!file.type.startsWith('image/')) {
-      toast.error('El archivo seleccionado debe ser una imagen.')
-      return
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('La imagen no debe superar los 5MB.')
-      return
+    const newItems = []
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        toast.error(`El archivo ${file.name} no es una imagen.`)
+        continue
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`La imagen ${file.name} supera los 5MB.`)
+        continue
+      }
+      newItems.push({
+        url: URL.createObjectURL(file),
+        is_primary: false,
+        file: file
+      })
     }
 
-    setImageFile(file)
-    setPreviewUrl(URL.createObjectURL(file))
+    if (newItems.length > 0) {
+      setImageList(prev => {
+        const list = [...prev, ...newItems]
+        if (!list.some(img => img.is_primary) && list.length > 0) {
+          list[0].is_primary = true
+        }
+        return list
+      })
+    }
+
+    e.target.value = null
   }
 
-  const handleRemoveImage = () => {
-    setImageFile(null)
-    setImageUrl('')
-    setPreviewUrl('')
+  // Manejador para añadir una URL de imagen manualmente
+  const handleAddUrlImage = () => {
+    if (!newUrlInput.trim()) return
+    const url = newUrlInput.trim()
+    
+    setImageList(prev => {
+      const isFirst = prev.length === 0
+      return [...prev, { url, is_primary: isFirst }]
+    })
+    setNewUrlInput('')
+  }
+
+  // Establecer imagen principal
+  const handleSetPrimaryImage = (index) => {
+    setImageList(prev => prev.map((img, i) => ({
+      ...img,
+      is_primary: i === index
+    })))
+  }
+
+  // Eliminar una imagen de la lista
+  const handleRemoveImageItem = (index) => {
+    setImageList(prev => {
+      const updated = prev.filter((_, i) => i !== index)
+      if (updated.length > 0 && !updated.some(img => img.is_primary)) {
+        updated[0].is_primary = true
+      }
+      return updated
+    })
   }
 
   const handleSubmit = async (e) => {
@@ -172,37 +316,21 @@ export default function ProductsManager() {
     setSubmitting(true)
 
     try {
-      let finalImageUrl = imageUrl
+      const finalSlug = slugify(slug || name)
 
-      if (imageFile) {
-        const fileExt = imageFile.name.split('.').pop()
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`
-        const filePath = `${store.id}/${fileName}`
-
-        // Subir archivo al bucket 'productos'
-        const { error: uploadError } = await supabase.storage
-          .from('productos')
-          .upload(filePath, imageFile)
-
-        if (uploadError) throw uploadError
-
-        // Obtener la URL pública de la imagen
-        const { data: urlData } = supabase.storage
-          .from('productos')
-          .getPublicUrl(filePath)
-
-        finalImageUrl = urlData.publicUrl
-      }
+      // 1. Calcular stock total sumando todas las sucursales
+      const totalStockSum = Object.values(branchStocksInput).reduce((sum, val) => sum + (parseInt(val) || 0), 0)
 
       const productPayload = {
         store: store.id,
         name: name.trim(),
+        slug: finalSlug,
         category: parseInt(categoryId),
         sku: sku.trim().toUpperCase(),
         price: parseFloat(price),
         compare_price: comparePrice ? parseFloat(comparePrice) : null,
-        stock: parseInt(stock) || 0,
-        stock_status: (parseInt(stock) || 0) > 0,
+        stock: totalStockSum,
+        stock_status: totalStockSum > 0,
         description: description.trim(),
         is_active: isActive,
         barcode: barcode.trim() || null,
@@ -213,7 +341,6 @@ export default function ProductsManager() {
       let productId
 
       if (editingProduct) {
-        // 1. Actualizar producto existente
         const { error } = await supabase
           .from('producto')
           .update(productPayload)
@@ -221,9 +348,7 @@ export default function ProductsManager() {
 
         if (error) throw error
         productId = editingProduct.id
-        toast.success('Producto actualizado correctamente.')
       } else {
-        // 2. Crear nuevo producto
         const { data, error } = await supabase
           .from('producto')
           .insert(productPayload)
@@ -232,51 +357,97 @@ export default function ProductsManager() {
 
         if (error) throw error
         productId = data.id
-        toast.success('Producto creado con éxito.')
       }
 
-      // 3. Manejo de imágenes (tabla ProductImagen)
-      const existingImages = editingProduct?.ProductImagen || []
-      const mainImg = existingImages.find(img => img.is_primary) || existingImages[0]
-
-      if (finalImageUrl.trim()) {
-        if (mainImg) {
-          if (mainImg.url !== finalImageUrl.trim()) {
-            // Si ya existe una imagen y es diferente, la actualizamos
-            const { error: imgUpdateError } = await supabase
-              .from('ProductImagen')
-              .update({ url: finalImageUrl.trim() })
-              .eq('id', mainImg.id)
-            if (imgUpdateError) throw imgUpdateError
+      // 2. Guardar stock en producto_stock_sucursal para cada sucursal
+      if (branches.length > 0) {
+        const pssPayload = branches.map(b => {
+          const sVal = parseInt(branchStocksInput[b.id]) || 0
+          return {
+            producto_id: productId,
+            sucursal_id: b.id,
+            stock: sVal,
+            stock_status: sVal > 0
           }
-        } else {
-          // Si no existía imagen previa, la insertamos
-          const { error: imgInsertError } = await supabase
-            .from('ProductImagen')
-            .insert({
-              product: productId,
-              url: finalImageUrl.trim(),
-              is_primary: true,
-              order: 0
-            })
-          if (imgInsertError) throw imgInsertError
+        })
+
+        const { error: pssErr } = await supabase
+          .from('producto_stock_sucursal')
+          .upsert(pssPayload, { onConflict: 'producto_id, sucursal_id' })
+
+        if (pssErr) {
+          console.error('Error al guardar stock por sucursal:', pssErr)
         }
-      } else if (mainImg) {
-        // Si el usuario vació el campo y existía una imagen, la borramos
-        const { error: imgDeleteError } = await supabase
-          .from('ProductImagen')
-          .delete()
-          .eq('id', mainImg.id)
-        if (imgDeleteError) throw imgDeleteError
       }
 
-      // 4. Sincronizar grupos de opciones asociados (tabla producto_grupo_relacion)
-      const { error: relDeleteError } = await supabase
-        .from('producto_grupo_relacion')
-        .delete()
-        .eq('producto_id', productId)
+      // 3. Subir imágenes nuevas a Supabase Storage y preparar lista final para ProductImagen
+      const storeFolderName = store?.comercial_name
+        ? slugify(store.comercial_name)
+        : `store-${store.id}`
 
-      if (relDeleteError) throw relDeleteError
+      const finalImagesToSave = []
+
+      for (let i = 0; i < imageList.length; i++) {
+        const item = imageList[i]
+        let imgUrl = item.url
+
+        if (item.file) {
+          const fileExt = item.file.name.split('.').pop()
+          const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`
+          const filePath = `${storeFolderName}/${fileName}`
+
+          const { error: uploadError } = await supabase.storage
+            .from('productos')
+            .upload(filePath, item.file)
+
+          if (uploadError) {
+            console.error('Error al subir imagen a Supabase Storage:', uploadError)
+            if (uploadError.message?.includes('Bucket not found') || uploadError.error === 'Bucket not found' || uploadError.statusCode === '404') {
+              toast.error("El bucket 'productos' no existe en Supabase Storage. Créalo como público en Supabase.", { duration: 6000 })
+            }
+          } else {
+            const { data: urlData } = supabase.storage
+              .from('productos')
+              .getPublicUrl(filePath)
+            imgUrl = urlData.publicUrl
+          }
+        }
+
+        if (imgUrl && imgUrl.trim()) {
+          finalImagesToSave.push({
+            product: productId,
+            url: imgUrl.trim(),
+            is_primary: !!item.is_primary,
+            order: i
+          })
+        }
+      }
+
+      // Sincronizar tabla ProductImagen (borrar anteriores e insertar lista final actualizada)
+      await supabase
+        .from('ProductImagen')
+        .delete()
+        .eq('product', productId)
+
+      if (finalImagesToSave.length > 0) {
+        const { error: imgInsertError } = await supabase
+          .from('ProductImagen')
+          .insert(finalImagesToSave)
+
+        if (imgInsertError) {
+          console.error('Error al guardar lista de imágenes:', imgInsertError)
+        }
+      }
+
+      // 4. Opciones relacionales (tabla producto_grupo_relacion)
+      if (editingProduct) {
+        const { error: relDeleteError } = await supabase
+          .from('producto_grupo_relacion')
+          .delete()
+          .eq('producto_id', productId)
+
+        if (relDeleteError) console.error('Error al limpiar relaciones:', relDeleteError)
+      }
 
       if (selectedGroupIds.length > 0) {
         const relationsPayload = selectedGroupIds.map((groupId, index) => ({
@@ -289,9 +460,10 @@ export default function ProductsManager() {
           .from('producto_grupo_relacion')
           .insert(relationsPayload)
 
-        if (relInsertError) throw relInsertError
+        if (relInsertError) console.error('Error al insertar relaciones de grupos:', relInsertError)
       }
 
+      toast.success(editingProduct ? 'Producto actualizado correctamente.' : 'Producto creado con éxito.')
       setModalOpen(false)
       fetchData()
     } catch (err) {
@@ -321,7 +493,6 @@ export default function ProductsManager() {
     }
   }
 
-  // Toggle rápido de estado de activación directo en la tabla
   const handleToggleActive = async (product) => {
     const updatedStatus = !product.is_active
     try {
@@ -347,7 +518,7 @@ export default function ProductsManager() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-xl font-serif font-semibold text-zinc-950">Catálogo de Productos</h2>
-          <p className="text-xs text-zinc-400 font-medium">Administra los postres, sus precios, stock y visibilidad en la tienda.</p>
+          <p className="text-xs text-zinc-400 font-medium">Administra los productos, precios, inventarios por sucursal y visibilidad.</p>
         </div>
         <button
           onClick={handleOpenCreate}
@@ -392,28 +563,40 @@ export default function ProductsManager() {
                   <th className="px-6 py-4">Producto</th>
                   <th className="px-6 py-4">Categoría</th>
                   <th className="px-6 py-4">Precio ($)</th>
-                  <th className="px-6 py-4">Stock</th>
+                  <th className="px-6 py-4">Stock por Sucursal</th>
                   <th className="px-6 py-4 text-center">Estado</th>
                   <th className="px-6 py-4 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 text-sm text-zinc-700">
                 {products.map((product) => {
-                  const mainImg = product.ProductImagen?.find(img => img.is_primary) || product.ProductImagen?.[0]
+                  const images = product.ProductImagen || []
+                  const mainImg = images.find(img => img.is_primary) || images[0]
+                  const pssList = branchStockMap[product.id] || []
+                  const totalStock = pssList.reduce((sum, item) => sum + (item.stock || 0), 0)
+
                   return (
                     <tr key={product.id} className="hover:bg-zinc-50/50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg overflow-hidden border border-zinc-100 bg-zinc-50 flex items-center justify-center shrink-0">
+                          <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-zinc-100 bg-zinc-50 flex items-center justify-center shrink-0">
                             {mainImg ? (
                               <img src={mainImg.url} alt={product.name} className="w-full h-full object-cover" />
                             ) : (
                               <ImageIcon className="w-5 h-5 text-zinc-300" />
                             )}
+                            {images.length > 1 && (
+                              <span className="absolute bottom-0 right-0 bg-zinc-900/80 text-white text-[9px] font-bold px-1 rounded-tl">
+                                +{images.length - 1}
+                              </span>
+                            )}
                           </div>
                           <div>
                             <span className="font-semibold text-zinc-900 block leading-tight">{product.name}</span>
-                            {product.sku && <span className="text-[10px] text-zinc-400 font-mono">SKU: {product.sku}</span>}
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {product.sku && <span className="text-[10px] text-zinc-400 font-mono">SKU: {product.sku}</span>}
+                              {product.slug && <span className="text-[10px] text-zinc-400 font-mono">/{product.slug}</span>}
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -430,13 +613,29 @@ export default function ProductsManager() {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 font-medium">
-                        {product.stock > 10 ? (
-                          <span className="text-zinc-600">{product.stock}</span>
-                        ) : product.stock > 0 ? (
-                          <span className="text-amber-600 font-bold">{product.stock} (Bajo)</span>
+                      <td className="px-6 py-4">
+                        {pssList.length === 0 ? (
+                          <span className="text-xs text-zinc-400 font-mono font-bold">{totalStock || product.stock || 0} unid.</span>
                         ) : (
-                          <span className="text-rose-600 font-bold">Agotado</span>
+                          <div className="space-y-1">
+                            <span className="text-xs font-bold font-mono text-zinc-900 block">
+                              Total: {totalStock} unid.
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {pssList.map((item) => (
+                                <span
+                                  key={item.sucursal_id}
+                                  className={`text-[10px] px-2 py-0.5 rounded border font-mono ${
+                                    item.stock > 0
+                                      ? 'bg-zinc-100 text-zinc-700 border-zinc-200'
+                                      : 'bg-rose-50 text-rose-600 border-rose-200 font-bold'
+                                  }`}
+                                >
+                                  {item.sucursal_nombre}: {item.stock}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
                         )}
                       </td>
                       <td className="px-6 py-4 text-center">
@@ -496,49 +695,73 @@ export default function ProductsManager() {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Nombre del Producto</label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Ej. Torta de Tres Leches"
-                  className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all"
-                />
-              </div>
-
+              
+              {/* Nombre y Slug */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Categoría</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Nombre del Producto *</label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={handleNameChange}
+                    placeholder="Ej. Torta Tres Leches"
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all font-semibold"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Slug URL *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      value={slug}
+                      onChange={handleSlugChange}
+                      placeholder="torta-tres-leches"
+                      className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all font-mono bg-zinc-50/50"
+                    />
+                  </div>
+                  <p className="text-[10px] text-zinc-400 font-medium">Auto-generado desde el nombre. URL limpia para la web.</p>
+                </div>
+              </div>
+
+              {/* Categoría y SKU */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Categoría *</label>
                   <select
                     required
                     value={categoryId}
                     onChange={(e) => setCategoryId(e.target.value)}
                     className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all bg-white"
                   >
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    {categoryTree.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {'— '.repeat(cat.depth)}
+                        {cat.name}
+                      </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">SKU (Código único)</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">SKU (Código único) *</label>
                   <input
                     type="text"
                     required
                     value={sku}
                     onChange={(e) => setSku(e.target.value)}
                     placeholder="Ej. TORT-001"
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all font-mono"
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all font-mono uppercase"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Precio y Precio de Comparación */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Precio ($)</label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Precio ($) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -546,7 +769,7 @@ export default function ProductsManager() {
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
                     placeholder="Ej. 12.50"
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all"
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all font-mono"
                   />
                 </div>
 
@@ -558,23 +781,43 @@ export default function ProductsManager() {
                     value={comparePrice}
                     onChange={(e) => setComparePrice(e.target.value)}
                     placeholder="Ej. 15.00"
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Stock (Inventario)</label>
-                  <input
-                    type="number"
-                    required
-                    value={stock}
-                    onChange={(e) => setStock(e.target.value)}
-                    placeholder="Ej. 50"
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all"
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all font-mono"
                   />
                 </div>
               </div>
 
+              {/* Inventario por Sucursal */}
+              {branches.length > 0 && (
+                <div className="space-y-2 border-t border-zinc-100 pt-4">
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-zinc-400" />
+                    Inventario Inicial por Sucursal / Almacén
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-zinc-50/50 p-4 border border-zinc-200/80 rounded-xl">
+                    {branches.map((branch) => (
+                      <div key={branch.id} className="space-y-1">
+                        <label className="text-xs font-semibold text-zinc-700 block truncate">
+                          {branch.nombre} {branch.es_principal ? '(Principal)' : ''}
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={branchStocksInput[branch.id] !== undefined ? branchStocksInput[branch.id] : '0'}
+                          onChange={(e) =>
+                            setBranchStocksInput({
+                              ...branchStocksInput,
+                              [branch.id]: e.target.value
+                            })
+                          }
+                          className="w-full px-3 py-2 rounded-xl border border-zinc-200 focus:ring-1 focus:ring-zinc-950 outline-none text-xs font-mono font-bold bg-white"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Barcode y Tax */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Código de Barras (Barcode - Opcional)</label>
@@ -583,7 +826,7 @@ export default function ProductsManager() {
                     value={barcode}
                     onChange={(e) => setBarcode(e.target.value)}
                     placeholder="Ej. 750103049..."
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all"
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all font-mono"
                   />
                 </div>
 
@@ -595,54 +838,114 @@ export default function ProductsManager() {
                     value={tax}
                     onChange={(e) => setTax(e.target.value)}
                     placeholder="Ej. 16.00"
-                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all"
+                    className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all font-mono"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Imagen del Producto (Subir Archivo)</label>
-                <div className="flex items-center gap-3">
-                  <label className="flex-1 flex flex-col items-center justify-center border border-dashed border-zinc-200 hover:border-zinc-400 bg-zinc-50/50 hover:bg-zinc-50 py-3.5 px-4 rounded-xl cursor-pointer transition-all">
-                    <span className="text-xs text-zinc-655 font-semibold flex items-center gap-1.5">
-                      <ImageIcon className="w-4 h-4 text-zinc-450" />
-                      {imageFile ? imageFile.name : 'Seleccionar Imagen...'}
+              {/* SECCIÓN MULTI-IMÁGENES */}
+              <div className="space-y-3 border-t border-zinc-100 pt-4">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-zinc-400" />
+                    Galería de Imágenes del Producto ({imageList.length})
+                  </label>
+                  <span className="text-[10px] text-zinc-400 font-medium">Haz clic en la estrella ⭐ para fijar la imagen principal</span>
+                </div>
+
+                {/* Subir archivos múltiples o pegar URL */}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <label className="flex-1 flex flex-col items-center justify-center border border-dashed border-zinc-300 hover:border-zinc-500 bg-zinc-50/50 hover:bg-zinc-50 py-3 px-4 rounded-xl cursor-pointer transition-all">
+                    <span className="text-xs text-zinc-700 font-semibold flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-zinc-500" />
+                      Subir Imágenes (Seleccionar Varias)
                     </span>
                     <input
                       type="file"
+                      multiple
                       accept="image/*"
                       className="hidden"
-                      onChange={handleFileChange}
+                      onChange={handleMultipleFilesChange}
                     />
                   </label>
-                  
-                  {previewUrl && (
-                    <div className="relative w-14 h-14 border border-zinc-150 rounded-xl overflow-hidden shrink-0 bg-zinc-50 group">
-                      <img src={previewUrl} alt="Vista previa" className="w-full h-full object-cover" />
-                      <button
-                        type="button"
-                        onClick={handleRemoveImage}
-                        className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-all"
-                        title="Quitar imagen"
-                      >
-                        Quitar
-                      </button>
-                    </div>
-                  )}
+
+                  <div className="flex-1 flex gap-2">
+                    <input
+                      type="url"
+                      value={newUrlInput}
+                      onChange={(e) => setNewUrlInput(e.target.value)}
+                      placeholder="O pegar URL de imagen..."
+                      className="flex-1 px-3 py-2 rounded-xl border border-zinc-200 focus:ring-1 focus:ring-zinc-950 outline-none text-xs bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddUrlImage}
+                      className="px-3 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 rounded-xl text-xs font-semibold shrink-0 transition-colors"
+                    >
+                      Añadir
+                    </button>
+                  </div>
                 </div>
+
+                {/* Galería de miniaturas */}
+                {imageList.length > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 pt-2">
+                    {imageList.map((img, index) => (
+                      <div
+                        key={index}
+                        className={`relative group rounded-xl overflow-hidden border-2 aspect-square bg-zinc-50 shadow-sm transition-all ${
+                          img.is_primary ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-zinc-200'
+                        }`}
+                      >
+                        <img src={img.url} alt={`Imagen ${index + 1}`} className="w-full h-full object-cover" />
+
+                        {/* Badge de Imagen Principal */}
+                        {img.is_primary && (
+                          <span className="absolute top-1.5 left-1.5 bg-amber-400 text-amber-950 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md flex items-center gap-1 shadow">
+                            <Star className="w-2.5 h-2.5 fill-current" /> Principal
+                          </span>
+                        )}
+
+                        {/* Acciones en Hover */}
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-1">
+                          {!img.is_primary && (
+                            <button
+                              type="button"
+                              onClick={() => handleSetPrimaryImage(index)}
+                              className="p-1.5 bg-amber-400 text-amber-950 rounded-lg hover:scale-105 transition-transform"
+                              title="Marcar como Principal"
+                            >
+                              <Star className="w-3.5 h-3.5 fill-current" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveImageItem(index)}
+                            className="p-1.5 bg-rose-600 text-white rounded-lg hover:scale-105 transition-transform"
+                            title="Eliminar imagen"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
+              {/* Descripción */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Descripción</label>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Escribe detalles del postre, alérgenos, etc..."
+                  placeholder="Escribe detalles del producto, características, etc..."
                   rows={3}
                   className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm resize-none transition-all"
                 />
               </div>
 
+              {/* Toggles */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="flex items-center gap-3 bg-zinc-50/50 p-4 border border-zinc-100 rounded-xl">
                   <input
@@ -666,23 +969,33 @@ export default function ProductsManager() {
                     className="w-4.5 h-4.5 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-950"
                   />
                   <label htmlFor="precioPorTamano" className="text-xs font-bold uppercase tracking-wider text-zinc-600 cursor-pointer select-none">
-                    Precio por Tamaño
+                    Variantes definen el precio
                   </label>
                 </div>
               </div>
 
+              {/* Grupos de opciones adicionales */}
               {allOptionGroups.length > 0 && (
-                <div className="space-y-2.5 border-t border-zinc-100 pt-4">
-                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500 block">Modificadores y Variaciones Vinculados</label>
-                  <p className="text-[10px] text-zinc-400 font-medium">Marca los grupos de opciones que aplican a este postre:</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-36 overflow-y-auto pr-1">
-                    {allOptionGroups.map(group => {
-                      const isChecked = selectedGroupIds.includes(group.id)
+                <div className="space-y-2 border-t border-zinc-100 pt-4">
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+                    Modificadores y Grupos de Opciones Vinculados
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-1">
+                    {allOptionGroups.map((group) => {
+                      const isSelected = selectedGroupIds.includes(group.id)
                       return (
-                        <label key={group.id} className="flex items-center gap-2.5 bg-zinc-50/50 hover:bg-zinc-50 border border-zinc-150 rounded-xl p-3 cursor-pointer transition-colors text-xs font-semibold text-zinc-700 select-none">
+                        <label
+                          key={group.id}
+                          className={`flex items-center justify-between p-3 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-zinc-950 text-white border-zinc-950'
+                              : 'bg-zinc-50 text-zinc-700 border-zinc-200 hover:border-zinc-300'
+                          }`}
+                        >
+                          <span>{group.nombre}</span>
                           <input
                             type="checkbox"
-                            checked={isChecked}
+                            checked={isSelected}
                             onChange={(e) => {
                               if (e.target.checked) {
                                 setSelectedGroupIds([...selectedGroupIds, group.id])
@@ -690,9 +1003,9 @@ export default function ProductsManager() {
                                 setSelectedGroupIds(selectedGroupIds.filter(id => id !== group.id))
                               }
                             }}
-                            className="w-4 h-4 rounded border-zinc-300 text-zinc-955 focus:ring-zinc-950"
+                            className="hidden"
                           />
-                          {group.nombre}
+                          {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
                         </label>
                       )
                     })}
@@ -700,7 +1013,8 @@ export default function ProductsManager() {
                 </div>
               )}
 
-              <div className="pt-2 border-t border-zinc-100 flex justify-end gap-3">
+              {/* Botones de acción */}
+              <div className="pt-4 border-t border-zinc-100 flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
@@ -717,6 +1031,7 @@ export default function ProductsManager() {
                   {editingProduct ? 'Guardar Cambios' : 'Crear Producto'}
                 </button>
               </div>
+
             </form>
           </div>
         </div>

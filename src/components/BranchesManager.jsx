@@ -36,6 +36,8 @@ const BranchesManager = () => {
     ciudad: "",
     estado_provincia: "",
     codigo_postal: "",
+    latitud: "",
+    longitud: "",
     telefono: "",
     email_contacto: "",
     es_principal: false,
@@ -89,6 +91,8 @@ const BranchesManager = () => {
         ciudad: branch.ciudad || "",
         estado_provincia: branch.estado_provincia || "",
         codigo_postal: branch.codigo_postal || "",
+        latitud: branch.latitud || "",
+        longitud: branch.longitud || "",
         telefono: branch.telefono || "",
         email_contacto: branch.email_contacto || "",
         es_principal: branch.es_principal || false,
@@ -105,6 +109,8 @@ const BranchesManager = () => {
         ciudad: store?.city || "",
         estado_provincia: "",
         codigo_postal: "",
+        latitud: "",
+        longitud: "",
         telefono: store?.whatsapp || "",
         email_contacto: "",
         es_principal: branches.length === 0, // Si es la primera, marcar como principal por defecto
@@ -587,6 +593,37 @@ const BranchesManager = () => {
                           ...formData,
                           codigo_postal: e.target.value,
                         })
+                      }
+                      className="w-full px-3.5 py-2 rounded-xl border border-zinc-200 focus:ring-1 focus:ring-zinc-950 outline-none transition-all font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <label className="font-bold text-zinc-700 block">
+                      Latitud GPS (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="ej: 10.4806"
+                      value={formData.latitud}
+                      onChange={(e) =>
+                        setFormData({ ...formData, latitud: e.target.value })
+                      }
+                      className="w-full px-3.5 py-2 rounded-xl border border-zinc-200 focus:ring-1 focus:ring-zinc-950 outline-none transition-all font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-bold text-zinc-700 block">
+                      Longitud GPS (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="ej: -66.9036"
+                      value={formData.longitud}
+                      onChange={(e) =>
+                        setFormData({ ...formData, longitud: e.target.value })
                       }
                       className="w-full px-3.5 py-2 rounded-xl border border-zinc-200 focus:ring-1 focus:ring-zinc-950 outline-none transition-all font-mono"
                     />

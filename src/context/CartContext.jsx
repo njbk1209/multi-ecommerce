@@ -30,7 +30,7 @@ export const CartProvider = ({ children }) => {
   // 2. Sincronizar precios en Bolívares (Bs) cuando la tasa de cambio se cargue o cambie
   useEffect(() => {
     if (!exchangeRate) return;
-    setCart(prev => 
+    setCart(prev =>
       prev.map(item => ({
         ...item,
         price_bs: item.price * exchangeRate,
@@ -61,11 +61,11 @@ export const CartProvider = ({ children }) => {
             .map(item => {
               const fresh = dbProductsMap.get(item.id);
               // Eliminar del carrito si el producto ya no existe o no tiene stock
-              if (!fresh || fresh.stock <= 0) return null; 
+              if (!fresh || fresh.stock <= 0) return null;
 
               const basePriceNum = fresh.precio_por_tamano ? 0 : (parseFloat(fresh.price) || 0);
               const baseComparePriceNum = fresh.precio_por_tamano ? 0 : (fresh.compare_price ? parseFloat(fresh.compare_price) : null);
-              
+
               // Sumar modificadores si tiene
               const modifiersTotal = item.selectedOptions?.reduce((sum, opt) => sum + (parseFloat(opt.price_modifier) || 0), 0) || 0;
               const freshPrice = basePriceNum + modifiersTotal;
@@ -128,7 +128,7 @@ export const CartProvider = ({ children }) => {
 
           const basePriceNum = fresh.precio_por_tamano ? 0 : (parseFloat(fresh.price) || 0);
           const baseComparePriceNum = fresh.precio_por_tamano ? 0 : (fresh.compare_price ? parseFloat(fresh.compare_price) : null);
-          
+
           // Calcular el precio fresco con modificadores
           const modifiersTotal = item.selectedOptions?.reduce((sum, opt) => sum + (parseFloat(opt.price_modifier) || 0), 0) || 0;
           const freshPrice = basePriceNum + modifiersTotal;
@@ -183,6 +183,18 @@ export const CartProvider = ({ children }) => {
   };
 
   const addToCart = (product, selectedOptions = [], comment = '') => {
+    // Validar ciudad única en el carrito
+    if (cart.length > 0 && product.ciudad) {
+      const existingCity = cart.find((i) => i.ciudad)?.ciudad;
+      if (existingCity && existingCity.toLowerCase() !== product.ciudad.toLowerCase()) {
+        toast.error(
+          `📍 Tu carrito contiene productos de "${existingCity}". No puedes mezclar productos de distintas ciudades (${product.ciudad}) en la misma orden.`,
+          { duration: 6000 }
+        );
+        return false;
+      }
+    }
+
     const basePrice = product.precio_por_tamano ? 0 : product.price;
     const baseComparePrice = product.precio_por_tamano ? 0 : product.compare_price;
 
@@ -206,8 +218,9 @@ export const CartProvider = ({ children }) => {
           item.cartItemId === cartItemId ? { ...item, qty: item.qty + 1 } : item
         );
       }
-      return [...prev, { 
-        ...product, 
+      return [...prev, {
+        ...product,
+        ciudad: product.ciudad || (prev[0] ? prev[0].ciudad : null),
         cartItemId,
         price: itemPrice,
         compare_price: itemComparePrice,
@@ -215,10 +228,11 @@ export const CartProvider = ({ children }) => {
         compare_price_bs: itemComparePriceBs,
         selectedOptions,
         comment,
-        qty: 1 
+        qty: 1
       }];
     });
-    toast.success(`😋 ¡${product.name} agregado al carrito!`);
+    toast.success(`🛒¡${product.name} agregado al carrito!`);
+    return true;
   };
 
   const updateQuantity = (cartItemId, amount) => {

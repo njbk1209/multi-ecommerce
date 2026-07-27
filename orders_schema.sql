@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS public.pedido (
   CONSTRAINT pedido_store_fkey FOREIGN KEY (store_id) REFERENCES public.store(id) ON DELETE CASCADE
 );
 
--- 2. Tabla de Items / Productos del Pedido
+-- 2. Tabla de Items / Productos del Pedido (con sucursal/almacén, SKU y Código de Barra)
 CREATE TABLE IF NOT EXISTS public.pedido_item (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
@@ -31,9 +31,14 @@ CREATE TABLE IF NOT EXISTS public.pedido_item (
   precio_unitario numeric(10, 2) NOT NULL,
   comentario text,
   opciones_seleccionadas jsonb, -- Guarda modificadores seleccionados en formato JSON: [{nombre: 'Mediana', modificador_precio: 2.50}]
+  sucursal_id bigint,
+  sucursal_nombre text,
+  sku text,
+  codigo_barra text,
   CONSTRAINT pedido_item_pkey PRIMARY KEY (id),
   CONSTRAINT pedido_item_pedido_fkey FOREIGN KEY (pedido_id) REFERENCES public.pedido(id) ON DELETE CASCADE,
-  CONSTRAINT pedido_item_producto_fkey FOREIGN KEY (producto_id) REFERENCES public.producto(id) ON DELETE SET NULL
+  CONSTRAINT pedido_item_producto_fkey FOREIGN KEY (producto_id) REFERENCES public.producto(id) ON DELETE SET NULL,
+  CONSTRAINT pedido_item_sucursal_fkey FOREIGN KEY (sucursal_id) REFERENCES public.sucursal(id) ON DELETE SET NULL
 );
 
 -- ==========================================
@@ -93,7 +98,7 @@ SECURITY DEFINER
 AS $$
 DECLARE
   v_pedido_id bigint;
-  v_item json;
+  v_item jsonb;
 BEGIN
   -- 1. Insertar cabecera del pedido
   INSERT INTO public.pedido (
@@ -121,7 +126,7 @@ BEGIN
   )
   RETURNING id INTO v_pedido_id;
 
-  -- 2. Insertar cada uno de los items asociados
+  -- 2. Insertar cada uno de los items asociados con su sucursal, sku y codigo_barra
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
   LOOP
     INSERT INTO public.pedido_item (
@@ -131,7 +136,11 @@ BEGIN
       cantidad,
       precio_unitario,
       comentario,
-      opciones_seleccionadas
+      opciones_seleccionadas,
+      sucursal_id,
+      sucursal_nombre,
+      sku,
+      codigo_barra
     ) VALUES (
       v_pedido_id,
       (v_item->>'producto_id')::bigint,
@@ -139,7 +148,11 @@ BEGIN
       (v_item->>'cantidad')::integer,
       (v_item->>'precio_unitario')::numeric,
       v_item->>'comentario',
-      (v_item->'opciones_seleccionadas')
+      (v_item->'opciones_seleccionadas'),
+      NULLIF(v_item->>'sucursal_id', '')::bigint,
+      v_item->>'sucursal_nombre',
+      v_item->>'sku',
+      v_item->>'codigo_barra'
     );
   END LOOP;
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import Hero from './sections/Hero'
+import HeroCarousel from './sections/HeroCarousel'
 import ProductList from './sections/ProductList'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
@@ -22,7 +22,7 @@ const ProtectedRoute = ({ children, session }) => {
 const ShopLayout = () => (
   <div>
     <Navbar />
-    <Hero />
+    <HeroCarousel />
     <ProductList />
     <About />
     <Footer />

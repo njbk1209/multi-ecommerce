@@ -16,6 +16,7 @@ import {
   Phone,
   Package,
   Truck,
+  Building2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../utils/supabase";
@@ -178,12 +179,12 @@ const AdminDashboard = ({ onLogout, session }) => {
         prev.map((o) =>
           o.id === orderId
             ? {
-                ...o,
-                costo_envio_usd: newCostUsd,
-                costo_envio_bs: newCostBs,
-                total_usd: newTotalUsd,
-                total_bs: newTotalBs,
-              }
+              ...o,
+              costo_envio_usd: newCostUsd,
+              costo_envio_bs: newCostBs,
+              total_usd: newTotalUsd,
+              total_bs: newTotalBs,
+            }
             : o,
         ),
       );
@@ -223,6 +224,23 @@ const AdminDashboard = ({ onLogout, session }) => {
       let mensaje =
         `Hola *${order.nombre_cliente}*! \n\n` +
         `Tu pedido *#${order.id}* ha sido procesado. Aquí tienes los detalles para realizar tu pago:\n\n`;
+
+      mensaje += `*Resumen del Pedido:*\n`;
+      (order.items || []).forEach((item) => {
+        let itemStr = `• ${item.cantidad}x ${item.nombre_producto}`;
+        if (item.opciones_seleccionadas && item.opciones_seleccionadas.length > 0) {
+          const opts = item.opciones_seleccionadas.map((o) => o.nombre).join(", ");
+          itemStr += ` (${opts})`;
+        }
+        mensaje += `${itemStr}\n`;
+      });
+
+      if (order.metodo_entrega === "shipping" && order.costo_envio_usd > 0) {
+        const envBs = order.costo_envio_bs || (order.costo_envio_usd * rate);
+        mensaje += `• Costo de envío (${order.costo_envio_usd.toFixed(2)} $ / ${envBs.toFixed(2)} Bs)\n`;
+      }
+
+      mensaje += `\n`;
 
       if (paymentData) {
         mensaje += `*Métodos de Pago Disponibles:*\n\n`;
@@ -281,11 +299,73 @@ const AdminDashboard = ({ onLogout, session }) => {
     }
   };
 
-  const handleSendReadyForPickupMessage = (order) => {
-    const mensaje =
-      `¡Hola *${order.nombre_cliente}*! \n\n` +
-      `Te escribimos para informarte que tu pedido *#${order.id}* ya está listo para ser retirado.\n\n` +
-      `Puedes pasar a buscarlo en nuestro punto de despacho. ¡Muchas gracias por tu compra!`;
+  const handleSendReadyForPickupMessage = async (order) => {
+    let mensaje =
+      `¡Hola *${order.nombre_cliente}*!\n\n` +
+      `Te escribimos para informarte que tu pedido *#${order.id}* ya está listo para ser retirado.\n\n`;
+
+    try {
+      const { data: sucursalData } = await supabase
+        .from("sucursal")
+        .select("*")
+        .eq("store_id", store.id);
+
+      const sucursalMap = new Map((sucursalData || []).map((s) => [s.id, s]));
+
+      // Agrupar ítems por sucursal
+      const grouped = {};
+      (order.items || []).forEach((item) => {
+        const sucId = item.sucursal_id || "principal";
+        const sucName = item.sucursal_nombre || item.sucursal?.nombre || null;
+        if (!grouped[sucId]) {
+          grouped[sucId] = {
+            sucId,
+            sucName,
+            items: [],
+          };
+        }
+        grouped[sucId].items.push(item);
+      });
+
+      const groups = Object.values(grouped);
+
+      mensaje += `*Sucursales a visitar para el retiro:*\n\n`;
+
+      groups.forEach((group) => {
+        const suc = sucursalMap.get(parseInt(group.sucId));
+        let nombreSuc = group.sucName || (suc ? suc.nombre : "Sucursal Principal");
+        const dir = suc?.direccion || suc?.ciudad || "";
+        if (dir) {
+          nombreSuc += ` (${dir})`;
+        }
+
+        mensaje += `📍 *${nombreSuc}*\n`;
+        group.items.forEach((i) => {
+          mensaje += `• ${i.cantidad}x ${i.nombre_producto}\n`;
+        });
+        mensaje += `\n`;
+      });
+    } catch (err) {
+      mensaje += `Puedes pasar a buscarlo en nuestro punto de despacho.\n\n`;
+    }
+
+    mensaje += `¡Muchas gracias por tu compra!`;
+
+    const normalizedPhone = normalizePhone(order.whatsapp_cliente);
+    const waUrl = `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(mensaje)}`;
+    window.open(waUrl, "_blank");
+  };
+
+  const handleSendOnTheWayMessage = (order) => {
+    let mensaje =
+      `¡Hola *${order.nombre_cliente}*!\n\n` +
+      `🛵 Tu pedido *#${order.id}* ya va en camino hacia tu dirección de entrega.\n\n`;
+
+    if (order.direccion_entrega) {
+      mensaje += `*Dirección de Entrega:* ${order.direccion_entrega}\n\n`;
+    }
+
+    mensaje += `Por favor mantente atento para recibirlo. ¡Muchas gracias por tu preferencia!`;
 
     const normalizedPhone = normalizePhone(order.whatsapp_cliente);
     const waUrl = `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(mensaje)}`;
@@ -348,6 +428,18 @@ const AdminDashboard = ({ onLogout, session }) => {
           );
           if (confirmNotify) {
             handleSendReadyForPickupMessage({ ...order, estado: newStatus });
+          }
+        }, 300);
+      }
+
+      // Si pasa a "en camino", ofrecer notificar por WhatsApp
+      if (newStatus === "en camino") {
+        setTimeout(() => {
+          const confirmNotify = window.confirm(
+            "¿Deseas enviar un mensaje por WhatsApp al cliente para notificarle que su pedido ya va en camino?",
+          );
+          if (confirmNotify) {
+            handleSendOnTheWayMessage({ ...order, estado: newStatus });
           }
         }, 300);
       }
@@ -444,10 +536,9 @@ const AdminDashboard = ({ onLogout, session }) => {
           <button
             onClick={() => setActiveTab("orders")}
             className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
-              ${
-                activeTab === "orders"
-                  ? "border-zinc-900 text-zinc-950 font-bold"
-                  : "border-transparent text-zinc-400 hover:text-zinc-600"
+              ${activeTab === "orders"
+                ? "border-zinc-900 text-zinc-950 font-bold"
+                : "border-transparent text-zinc-400 hover:text-zinc-600"
               }`}
           >
             📋 Pedidos
@@ -455,10 +546,9 @@ const AdminDashboard = ({ onLogout, session }) => {
           <button
             onClick={() => setActiveTab("products")}
             className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
-              ${
-                activeTab === "products"
-                  ? "border-zinc-900 text-zinc-950 font-bold"
-                  : "border-transparent text-zinc-400 hover:text-zinc-600"
+              ${activeTab === "products"
+                ? "border-zinc-900 text-zinc-950 font-bold"
+                : "border-transparent text-zinc-400 hover:text-zinc-600"
               }`}
           >
             🍰 Productos
@@ -466,10 +556,9 @@ const AdminDashboard = ({ onLogout, session }) => {
           <button
             onClick={() => setActiveTab("branches")}
             className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
-              ${
-                activeTab === "branches"
-                  ? "border-zinc-900 text-zinc-950 font-bold"
-                  : "border-transparent text-zinc-400 hover:text-zinc-600"
+              ${activeTab === "branches"
+                ? "border-zinc-900 text-zinc-950 font-bold"
+                : "border-transparent text-zinc-400 hover:text-zinc-600"
               }`}
           >
             🏢 Sucursales
@@ -477,10 +566,9 @@ const AdminDashboard = ({ onLogout, session }) => {
           <button
             onClick={() => setActiveTab("inventory")}
             className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
-              ${
-                activeTab === "inventory"
-                  ? "border-zinc-900 text-zinc-950 font-bold"
-                  : "border-transparent text-zinc-400 hover:text-zinc-600"
+              ${activeTab === "inventory"
+                ? "border-zinc-900 text-zinc-950 font-bold"
+                : "border-transparent text-zinc-400 hover:text-zinc-600"
               }`}
           >
             📦 Inventario Almacén
@@ -488,10 +576,9 @@ const AdminDashboard = ({ onLogout, session }) => {
           <button
             onClick={() => setActiveTab("categories")}
             className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
-              ${
-                activeTab === "categories"
-                  ? "border-zinc-900 text-zinc-950 font-bold"
-                  : "border-transparent text-zinc-400 hover:text-zinc-600"
+              ${activeTab === "categories"
+                ? "border-zinc-900 text-zinc-950 font-bold"
+                : "border-transparent text-zinc-400 hover:text-zinc-600"
               }`}
           >
             📁 Categorías
@@ -499,10 +586,9 @@ const AdminDashboard = ({ onLogout, session }) => {
           <button
             onClick={() => setActiveTab("options")}
             className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
-              ${
-                activeTab === "options"
-                  ? "border-zinc-900 text-zinc-950 font-bold"
-                  : "border-transparent text-zinc-400 hover:text-zinc-600"
+              ${activeTab === "options"
+                ? "border-zinc-900 text-zinc-950 font-bold"
+                : "border-transparent text-zinc-400 hover:text-zinc-600"
               }`}
           >
             ⚙️ Modificadores
@@ -510,10 +596,9 @@ const AdminDashboard = ({ onLogout, session }) => {
           <button
             onClick={() => setActiveTab("settings")}
             className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
-              ${
-                activeTab === "settings"
-                  ? "border-zinc-900 text-zinc-950 font-bold"
-                  : "border-transparent text-zinc-400 hover:text-zinc-600"
+              ${activeTab === "settings"
+                ? "border-zinc-900 text-zinc-950 font-bold"
+                : "border-transparent text-zinc-400 hover:text-zinc-600"
               }`}
           >
             💳 Datos de Pago
@@ -619,11 +704,10 @@ const AdminDashboard = ({ onLogout, session }) => {
                     key={btn.id}
                     onClick={() => setFilter(btn.id)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-semibold uppercase tracking-wider border transition-all
-                  ${
-                    filter === btn.id
-                      ? "bg-zinc-900 border-zinc-900 text-white shadow-sm"
-                      : "bg-white border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-300"
-                  }`}
+                  ${filter === btn.id
+                        ? "bg-zinc-900 border-zinc-900 text-white shadow-sm"
+                        : "bg-white border-zinc-200 text-zinc-500 hover:text-zinc-900 hover:border-zinc-300"
+                      }`}
                   >
                     {btn.label}
                   </button>
@@ -688,7 +772,7 @@ const AdminDashboard = ({ onLogout, session }) => {
                         </div>
 
                         {/* Cliente */}
-                        <div className="space-y-1">
+                        <div className="space-y-0.5 max-w-[220px]">
                           <p className="text-sm font-bold text-zinc-800">
                             {order.nombre_cliente}
                           </p>
@@ -702,6 +786,14 @@ const AdminDashboard = ({ onLogout, session }) => {
                             <Phone className="w-3 h-3 text-zinc-400" />+
                             {order.whatsapp_cliente}
                           </a>
+                          {order.direccion_entrega && (
+                            <p
+                              className="text-xs italic text-zinc-400 font-normal leading-tight mt-0.5"
+                              title={order.direccion_entrega}
+                            >
+                              {order.direccion_entrega}
+                            </p>
+                          )}
                         </div>
 
                         {/* Entrega */}
@@ -785,7 +877,7 @@ const AdminDashboard = ({ onLogout, session }) => {
                                             placeholder="0.00"
                                             value={
                                               shippingInputs[order.id] !==
-                                              undefined
+                                                undefined
                                                 ? shippingInputs[order.id]
                                                 : order.costo_envio_usd || ""
                                             }
@@ -834,11 +926,19 @@ const AdminDashboard = ({ onLogout, session }) => {
                                   )}
                                 </div>
                               ) : (
-                                <div className="bg-white border border-zinc-200/60 rounded-xl p-3.5">
+                                <div className="bg-white border border-zinc-200/60 rounded-xl p-3.5 space-y-1.5">
                                   <p className="text-xs text-zinc-500 font-medium">
-                                    El cliente retirará personalmente en la
+                                    🛍️ El cliente retirará personalmente en la
                                     tienda.
                                   </p>
+                                  {order.direccion_entrega && (
+                                    <p className="text-xs italic text-zinc-400 font-normal leading-relaxed border-t border-zinc-100 pt-1.5">
+                                      <span className="font-semibold text-zinc-500 not-italic">
+                                        Dirección del cliente:
+                                      </span>{" "}
+                                      {order.direccion_entrega}
+                                    </p>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -885,6 +985,16 @@ const AdminDashboard = ({ onLogout, session }) => {
                                             💬 Notificar Retiro (WhatsApp)
                                           </button>
                                         )}
+                                      {order.estado === "en camino" && (
+                                        <button
+                                          onClick={() =>
+                                            handleSendOnTheWayMessage(order)
+                                          }
+                                          className="px-3.5 py-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-all flex items-center gap-1.5 active:scale-95 shadow-sm hover:shadow"
+                                        >
+                                          💬 Notificar En Camino (WhatsApp)
+                                        </button>
+                                      )}
                                       {allowed.includes("pendiente") && (
                                         <button
                                           onClick={() =>
@@ -915,19 +1025,19 @@ const AdminDashboard = ({ onLogout, session }) => {
                                       {allowed.includes(
                                         "en espera de retiro",
                                       ) && (
-                                        <button
-                                          onClick={() =>
-                                            handleUpdateStatus(
-                                              order.id,
-                                              "en espera de retiro",
-                                            )
-                                          }
-                                          className="px-3.5 py-2 text-xs font-semibold border border-zinc-200 hover:border-zinc-900 bg-white text-zinc-600 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-1.5 active:scale-95"
-                                        >
-                                          <Package className="w-3.5 h-3.5" />{" "}
-                                          Espera Retiro
-                                        </button>
-                                      )}
+                                          <button
+                                            onClick={() =>
+                                              handleUpdateStatus(
+                                                order.id,
+                                                "en espera de retiro",
+                                              )
+                                            }
+                                            className="px-3.5 py-2 text-xs font-semibold border border-zinc-200 hover:border-zinc-900 bg-white text-zinc-600 hover:text-zinc-900 rounded-xl transition-all flex items-center gap-1.5 active:scale-95"
+                                          >
+                                            <Package className="w-3.5 h-3.5" />{" "}
+                                            Espera Retiro
+                                          </button>
+                                        )}
                                       {allowed.includes("en camino") && (
                                         <button
                                           onClick={() =>
@@ -975,89 +1085,134 @@ const AdminDashboard = ({ onLogout, session }) => {
                                 })()}
                               </div>
                             </div>
+
+                            {/* Productos Comprados (Clasificados por Sucursal / Almacén) */}
+                            <div className="space-y-3">
+
+                              {(() => {
+                                // Agrupar items por sucursal
+                                const itemsGrouped = {};
+                                (order.items || []).forEach((item) => {
+                                  const sucName =
+                                    item.sucursal_nombre ||
+                                    item.sucursal?.nombre ||
+                                    "Sucursal Principal";
+                                  if (!itemsGrouped[sucName]) itemsGrouped[sucName] = [];
+                                  itemsGrouped[sucName].push(item);
+                                });
+
+                                return (
+                                  <div className="space-y-3">
+                                    {Object.entries(itemsGrouped).map(([sucName, items]) => (
+                                      <div
+                                        key={sucName}
+                                        className="bg-white border border-zinc-200/80 rounded-xl overflow-hidden shadow-xs"
+                                      >
+                                        <div className="bg-zinc-100/80 border-b border-zinc-200/80 px-4 py-2 flex items-center justify-between">
+                                          <span className="text-xs font-bold text-zinc-800 uppercase tracking-wide flex items-center gap-1.5">
+                                            <Building2 className="w-3.5 h-3.5 text-zinc-600" />
+                                            {sucName}
+                                          </span>
+                                          <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-200/60 px-2 py-0.5 rounded">
+                                            {items.length} {items.length === 1 ? "artículo" : "artículos"}
+                                          </span>
+                                        </div>
+
+                                        <div className="divide-y divide-zinc-100">
+                                          {items.map((item) => (
+                                            <div
+                                              key={item.id}
+                                              className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm"
+                                            >
+                                              <div className="space-y-1">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                  <span className="font-bold text-zinc-800">
+                                                    {item.cantidad}x {item.nombre_producto}
+                                                  </span>
+
+                                                  {/* Modificadores */}
+                                                  {item.opciones_seleccionadas?.length > 0 && (
+                                                    <div className="flex gap-1.5 flex-wrap">
+                                                      {item.opciones_seleccionadas.map((opt, i) => (
+                                                        <span
+                                                          key={i}
+                                                          className="text-[10px] bg-zinc-100 text-zinc-600 border border-zinc-200 px-2 py-0.5 rounded font-medium"
+                                                        >
+                                                          {opt.nombre}
+                                                          {opt.price_modifier > 0 &&
+                                                            ` (+$${opt.price_modifier.toFixed(2)})`}
+                                                        </span>
+                                                      ))}
+                                                    </div>
+                                                  )}
+                                                </div>
+
+                                                {/* SKU y Código de Barra */}
+                                                {(item.sku || item.codigo_barra || item.barcode) && (
+                                                  <div className="flex items-center gap-2 flex-wrap text-[10px] font-mono text-zinc-400">
+                                                    {item.sku && (
+                                                      <span className="bg-zinc-100 text-zinc-600 border border-zinc-200/80 px-1.5 py-0.5 rounded font-medium">
+                                                        SKU: {item.sku}
+                                                      </span>
+                                                    )}
+                                                    {(item.codigo_barra || item.barcode) && (
+                                                      <span className="bg-zinc-100 text-zinc-600 border border-zinc-200/80 px-1.5 py-0.5 rounded font-medium">
+                                                        Barra: {item.codigo_barra || item.barcode}
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                )}
+
+                                                {item.comentario && (
+                                                  <p className="text-xs font-medium text-zinc-400 bg-zinc-50 px-2.5 py-1 rounded-lg border border-zinc-100 w-fit">
+                                                    📝 Nota: {item.comentario}
+                                                  </p>
+                                                )}
+                                              </div>
+
+                                              <span className="font-semibold text-zinc-700 self-start sm:self-auto text-xs shrink-0">
+                                                Unitario: ${item.precio_unitario?.toFixed(2) || "0.00"}
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
+                            </div>
                           </div>
 
-                          {/* Productos Comprados */}
-                          <div className="space-y-3">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-                              Productos del Pedido
-                            </h4>
-                            <div className="bg-white border border-zinc-200/60 rounded-xl divide-y divide-zinc-100 overflow-hidden shadow-inner">
-                              {order.items?.map((item) => (
-                                <div
-                                  key={item.id}
-                                  className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm"
-                                >
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-bold text-zinc-800">
-                                        {item.cantidad}x {item.nombre_producto}
-                                      </span>
-
-                                      {/* Modificadores */}
-                                      {item.opciones_seleccionadas?.length >
-                                        0 && (
-                                        <div className="flex gap-1.5">
-                                          {item.opciones_seleccionadas.map(
-                                            (opt, i) => (
-                                              <span
-                                                key={i}
-                                                className="text-[10px] bg-zinc-100 text-zinc-600 border border-zinc-200 px-2 py-0.5 rounded font-medium"
-                                              >
-                                                {opt.nombre}{" "}
-                                                {opt.price_modifier > 0 &&
-                                                  `(+$${opt.price_modifier.toFixed(2)})`}
-                                              </span>
-                                            ),
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {item.comentario && (
-                                      <p className="text-xs font-medium text-zinc-400 bg-zinc-50 px-2.5 py-1 rounded-lg border border-zinc-100 w-fit">
-                                        📝 Nota: {item.comentario}
-                                      </p>
-                                    )}
-                                  </div>
-
-                                  <span className="font-semibold text-zinc-700 self-start sm:self-auto">
-                                    Unitario: ${item.precio_unitario.toFixed(2)}
-                                  </span>
-                                </div>
-                              ))}
+                          {/* Desglose de Totales */}
+                          <div className="flex flex-col items-end text-xs space-y-1.5 px-1.5 pt-1">
+                            <div className="flex justify-between w-full sm:w-64 text-zinc-500 font-medium">
+                              <span>Subtotal Productos:</span>
+                              <span className="font-mono font-medium">
+                                $
+                                {(
+                                  order.total_usd -
+                                  (order.costo_envio_usd || 0)
+                                ).toFixed(2)}
+                              </span>
                             </div>
-
-                            {/* Desglose de Totales */}
-                            <div className="flex flex-col items-end text-xs space-y-1.5 px-1.5 pt-1">
+                            {order.metodo_entrega === "shipping" && (
                               <div className="flex justify-between w-full sm:w-64 text-zinc-500 font-medium">
-                                <span>Subtotal Productos:</span>
+                                <span>Costo de Envío:</span>
                                 <span className="font-mono font-medium">
-                                  $
-                                  {(
-                                    order.total_usd -
-                                    (order.costo_envio_usd || 0)
-                                  ).toFixed(2)}
+                                  {order.costo_envio_usd > 0
+                                    ? `+$${order.costo_envio_usd.toFixed(2)}`
+                                    : "Pendiente de cotización"}
                                 </span>
                               </div>
-                              {order.metodo_entrega === "shipping" && (
-                                <div className="flex justify-between w-full sm:w-64 text-zinc-500 font-medium">
-                                  <span>Costo de Envío:</span>
-                                  <span className="font-mono font-medium">
-                                    {order.costo_envio_usd > 0
-                                      ? `+$${order.costo_envio_usd.toFixed(2)}`
-                                      : "Pendiente de cotización"}
-                                  </span>
-                                </div>
-                              )}
-                              <div className="flex justify-between w-full sm:w-64 border-t border-zinc-200 pt-1.5 font-bold text-zinc-900 text-sm">
-                                <span>Total del Pedido:</span>
-                                <span className="font-mono text-zinc-950">
-                                  {order.moneda_activa === "USD"
-                                    ? `$${order.total_usd.toFixed(2)}`
-                                    : `${order.total_bs.toLocaleString("es-VE")} Bs`}
-                                </span>
-                              </div>
+                            )}
+                            <div className="flex justify-between w-full sm:w-64 border-t border-zinc-200 pt-1.5 font-bold text-zinc-900 text-sm">
+                              <span>Total del Pedido:</span>
+                              <span className="font-mono text-zinc-950">
+                                {order.moneda_activa === "USD"
+                                  ? `$${order.total_usd.toFixed(2)}`
+                                  : `${order.total_bs.toLocaleString("es-VE")} Bs`}
+                              </span>
                             </div>
                           </div>
                         </div>

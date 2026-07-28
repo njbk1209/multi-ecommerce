@@ -926,11 +926,20 @@ const AdminDashboard = ({ onLogout, session }) => {
                                   )}
                                 </div>
                               ) : (
-                                <div className="bg-white border border-zinc-200/60 rounded-xl p-3.5 space-y-1.5">
-                                  <p className="text-xs text-zinc-500 font-medium">
-                                    🛍️ El cliente retirará personalmente en la
-                                    tienda.
+                                <div className="bg-white border border-zinc-200/60 rounded-xl p-3.5 space-y-2">
+                                  <p className="text-xs text-zinc-600 font-semibold flex items-center gap-1.5">
+                                    🛍️ El cliente retirará personalmente en la tienda.
                                   </p>
+                                  {order.lugar_pago && (
+                                    <div className="text-xs text-zinc-700 border-t border-zinc-100 pt-2 flex items-center justify-between">
+                                      <span className="font-semibold text-zinc-500">
+                                        💳 Modalidad de Pago:
+                                      </span>
+                                      <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 text-xs font-bold shadow-2xs">
+                                        {order.lugar_pago}
+                                      </span>
+                                    </div>
+                                  )}
                                   {order.direccion_entrega && (
                                     <p className="text-xs italic text-zinc-400 font-normal leading-relaxed border-t border-zinc-100 pt-1.5">
                                       <span className="font-semibold text-zinc-500 not-italic">

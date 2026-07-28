@@ -34,6 +34,7 @@ const buildWhatsAppMessage = ({
   deliveryMethod,
   direccion,
   gpsUrl,
+  lugarPago,
 }) => {
   const entrega =
     deliveryMethod === "shipping" ? "Envío a domicilio" : "Retiro en tienda";
@@ -45,6 +46,10 @@ const buildWhatsAppMessage = ({
     `*WhatsApp:* ${whatsapp}%0A` +
     `*Dirección:* ${direccion}%0A` +
     `*Método de Entrega:* ${entrega}%0A`;
+
+  if (deliveryMethod === "pickup" && lugarPago) {
+    mensaje += `*Lugar de Pago:* ${lugarPago}%0A`;
+  }
 
   if (deliveryMethod === "shipping" && gpsUrl) {
     mensaje += `*Ubicación GPS:* ${gpsUrl}%0A`;
@@ -125,6 +130,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
   });
   const [direccion, setDireccion] = useState("");
   const [deliveryMethod, setDeliveryMethod] = useState("pickup");
+  const [pickupPaymentMethod, setPickupPaymentMethod] = useState("tienda");
   const [gpsLocation, setGpsLocation] = useState(null);
   const [geoLoading, setGeoLoading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -303,6 +309,13 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
       ? `https://maps.google.com/?q=${gpsLocation.lat},${gpsLocation.lng}`
       : null;
 
+    const lugarPago =
+      deliveryMethod === "pickup"
+        ? pickupPaymentMethod === "tienda"
+          ? "Pagar en tienda"
+          : "Pagar por WhatsApp"
+        : null;
+
     const mensaje = buildWhatsAppMessage({
       nombre: form.nombre,
       cedula: cedulaCompleta,
@@ -314,6 +327,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
       direccion,
       gpsUrl,
       sucursal: selectedSucursalObj,
+      lugarPago,
     });
 
     try {
@@ -329,6 +343,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
           p_total_usd: getTotal("USD"),
           p_total_bs: getTotal("BS"),
           p_moneda_activa: currency,
+          p_lugar_pago: lugarPago,
           p_items: cart.map((item) => ({
             producto_id: item.id,
             nombre_producto: item.name,
@@ -752,6 +767,39 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                 />
                               </div>
                             </div>
+
+                            {/* Opciones de Lugar de Pago para Retiro en Tienda */}
+                            {deliveryMethod === "pickup" && (
+                              <div className="pt-1 space-y-1.5 animate-in fade-in duration-200">
+                                <label className="text-[11px] font-bold uppercase tracking-wider text-primary-dark block">
+                                  ¿Dónde realizarás tu pago? *
+                                </label>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPickupPaymentMethod("tienda")}
+                                    className={`flex items-center justify-center gap-1.5 p-2.5 rounded-xl border text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                                      pickupPaymentMethod === "tienda"
+                                        ? "border-primary bg-primary-light text-primary-dark shadow-xs"
+                                        : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                                    }`}
+                                  >
+                                    <span>🏪 Pagar en tienda</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPickupPaymentMethod("whatsapp")}
+                                    className={`flex items-center justify-center gap-1.5 p-2.5 rounded-xl border text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                                      pickupPaymentMethod === "whatsapp"
+                                        ? "border-primary bg-primary-light text-primary-dark shadow-xs"
+                                        : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                                    }`}
+                                  >
+                                    <span>💬 Pagar por WhatsApp</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
 
                             {/* Ubicación GPS opcional para Envío a Domicilio */}
                             {deliveryMethod === "shipping" && (

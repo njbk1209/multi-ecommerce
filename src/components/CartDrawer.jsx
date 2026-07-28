@@ -80,9 +80,8 @@ const buildWhatsAppMessage = ({
   });
 
   mensaje +=
-    `%0A%0A💳 *Pago:* El pago total del pedido se realizará a nuestra cuenta bancaria/pago móvil centralizada.%0A` +
-    `*Total a pagar:* ${totalUSD.toFixed(2)} $ / ${totalBS.toFixed(2)} Bs.%0A%0A` +
-    `_Enviado desde la web_`;
+    `%0A*Total a pagar:* ${totalUSD.toFixed(2)} $ / ${totalBS.toFixed(2)} Bs.%0A%0A` +
+    `_Enviado desde la web por el cliente_`;
 
   return mensaje;
 };

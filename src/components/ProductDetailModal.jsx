@@ -284,7 +284,7 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
         </Transition.Child>
 
         <div className="fixed inset-0 z-10 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-3 sm:p-6 text-center">
+          <div className="flex min-h-full items-center justify-center p-0 md:p-6 text-center">
             <Transition.Child
               as={Fragment}
               enter="ease-out duration-300"
@@ -294,18 +294,18 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
               leaveFrom="opacity-100 scale-100 translate-y-0"
               leaveTo="opacity-0 scale-95 translate-y-4"
             >
-              <Dialog.Panel className="relative w-full max-w-4xl transform overflow-hidden rounded-2xl md:rounded-3xl bg-white text-left shadow-2xl transition-all border border-primary-light my-8">
+              <Dialog.Panel className="relative w-full min-h-screen md:min-h-0 md:h-auto max-w-4xl transform overflow-hidden rounded-none md:rounded-3xl bg-white text-left shadow-2xl transition-all border-0 md:border border-primary-light my-0 md:my-8 flex flex-col justify-between">
                 {/* Botón de Cierre */}
                 <button
                   onClick={onClose}
-                  className="absolute top-4 right-4 z-30 p-2 rounded-full bg-white/80 hover:bg-white text-gray-500 hover:text-primary-dark backdrop-blur-md shadow-sm transition-all duration-200"
+                  className="fixed md:absolute top-4 right-4 z-40 p-2 rounded-full bg-white/90 hover:bg-white text-gray-600 hover:text-primary-dark backdrop-blur-md shadow-md transition-all duration-200"
                 >
                   <X className="w-5 h-5" />
                 </button>
 
-                <div className="grid grid-cols-1 md:grid-cols-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 flex-1">
                   {/* COLUMNA IZQUIERDA: GALERÍA DE IMÁGENES Y BADGES */}
-                  <div className="bg-gray-50 p-6 flex flex-col justify-between relative border-b md:border-b-0 md:border-r border-gray-100">
+                  <div className="bg-gray-50 p-4 md:p-6 flex flex-col justify-between relative border-b md:border-b-0 md:border-r border-gray-100">
                     {/* Badges superiores */}
                     <div className="absolute top-4 left-4 z-20 flex flex-col gap-1.5 items-start">
                       {isNew() && !isOutOfStock && (
@@ -361,18 +361,6 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
                         ))}
                       </div>
                     )}
-
-                    {/* Bloque de garantía / información extra */}
-                    <div className="mt-6 pt-4 border-t border-gray-200/60 grid grid-cols-2 gap-3 text-xs text-gray-500">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
-                        <span>Garantía de calidad</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Truck className="w-4 h-4 text-primary shrink-0" />
-                        <span>Despacho disponible</span>
-                      </div>
-                    </div>
                   </div>
 
                   {/* COLUMNA DERECHA: INFORMACIÓN DEL PRODUCTO Y OPCIONES */}
@@ -424,60 +412,111 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
                         )}
                       </div>
 
-                      {/* Stock Info Global */}
-                      <div className="flex items-center gap-2 text-xs">
-                        {isOutOfStock ? (
-                          <span className="text-red-500 font-semibold flex items-center gap-1">
-                            <AlertCircle className="w-4 h-4" /> No disponible en stock
-                          </span>
-                        ) : (
-                          <span className="text-emerald-600 font-medium flex items-center gap-1 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
-                            <Check className="w-3.5 h-3.5" /> Disponible
-                          </span>
-                        )}
-                      </div>
-
-                      {/* CONTENEDOR CON SCROLLBAR PROPIA PARA DESCRIPCIÓN Y STOCK POR SUCURSAL POR CIUDAD */}
-                      <div className="pt-2">
-                        <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-3">
 
 
-                          {/* Disponibilidad por Sucursal agrupada por Ciudad */}
-                          {Object.keys(stockByCity).length > 0 && (
-                            <div className="pt-2 space-y-2">
-                              <h4 className="text-[11px] font-bold uppercase tracking-wider text-primary-dark flex items-center gap-1.5">
+                      {/* BLOQUE DE ACCIÓN: SELECTOR DE SUCURSAL, CANTIDAD Y BOTÓN AGREGAR AL CARRITO */}
+                      <div className="pt-3 border-t border-gray-100 space-y-3.5">
+                        {/* Selector de Sucursal */}
+                        {sucursales.length > 0 && (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-bold uppercase tracking-wider text-primary-dark flex items-center gap-1.5">
                                 <Building2 className="w-3.5 h-3.5 text-primary" />
-                                Disponibilidad por Sucursal y Ciudad
-                              </h4>
-
-                              {Object.entries(stockByCity).map(([city, branchList]) => (
-                                <div key={city} className="space-y-1.5 bg-white p-2.5">
-                                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1">
-                                    📍 {city}
-                                  </span>
-                                  <div className="space-y-1 pl-2">
-                                    {branchList.map((b) => (
-                                      <div key={b.id} className="flex items-center justify-between text-xs py-0.5">
-                                        <span className="text-slate-600 font-medium truncate max-w-[210px]" title={b.direccion}>
-                                          {b.nombre} {b.direccion ? `(${b.direccion})` : ''}
-                                        </span>
-                                        {b.isAvailable && b.stock > 0 ? (
-                                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 shrink-0">
-                                            {b.stock} disp.
-                                          </span>
-                                        ) : (
-                                          <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 shrink-0">
-                                            Agotado
-                                          </span>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
+                                Elige la sucursal
+                              </label>
+                              {sucursales.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={handleGeolocateBranch}
+                                  disabled={geoLoading}
+                                  className="text-[10px] text-primary hover:text-primary-dark font-semibold hover:underline flex items-center gap-0.5"
+                                >
+                                  {geoLoading ? '⌛ Obteniendo...' : '📍 Asignar más cercana'}
+                                </button>
+                              )}
                             </div>
-                          )}
+
+                            {sucursales.length > 1 ? (
+                              <div className={`relative rounded-xl transition-all ${!selectedSucursalId
+                                ? 'border-2 border-amber-400 bg-amber-50/80 text-amber-900 animate-pulse-border-amber'
+                                : 'border border-gray-200 bg-white text-gray-800'
+                                }`}>
+                                <select
+                                  value={selectedSucursalId}
+                                  onChange={(e) => {
+                                    setSelectedSucursalId(e.target.value)
+                                    e.target.blur()
+                                  }}
+                                  className="w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold outline-none bg-transparent cursor-pointer focus:ring-2 focus:ring-primary"
+                                >
+                                  <option value="" className="bg-white text-gray-800">-- Selecciona una Sucursal --</option>
+                                  {sucursales.map((suc) => (
+                                    <option key={suc.id} value={suc.id} className="bg-white text-gray-800">
+                                      {suc.nombre} ({suc.direccion || suc.ciudad || 'Sede'})
+                                      {suc.distanceKm != null ? ` - a ${suc.distanceKm.toFixed(1)} km` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ) : (
+                              <div className="bg-primary-light/40 border border-primary-light rounded-xl p-2.5 text-xs text-primary-dark font-medium flex items-center gap-2">
+                                <Building2 className="w-4 h-4 text-primary shrink-0" />
+                                <span>
+                                  <strong>{sucursales[0].nombre}</strong>
+                                  {sucursales[0].direccion ? ` - ${sucursales[0].direccion}` : ''}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Control de Cantidad */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                            Cantidad
+                          </span>
+                          <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
+                            <button
+                              type="button"
+                              disabled={quantity <= 1}
+                              onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                              className="p-2 text-gray-600 hover:bg-gray-200 disabled:opacity-30 transition-colors"
+                            >
+                              <Minus className="w-4 h-4" />
+                            </button>
+                            <span className="px-4 py-1.5 text-sm font-semibold text-gray-800">
+                              {quantity}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={quantity >= (product.stock || 99)}
+                              onClick={() => setQuantity(q => q + 1)}
+                              className="p-2 text-gray-600 hover:bg-gray-200 disabled:opacity-30 transition-colors"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
+
+                        {/* Botón Agregar al Carrito */}
+                        <button
+                          type="button"
+                          disabled={isOutOfStock || isMissingRequiredSelections() || (sucursales.length > 1 && !selectedSucursalId)}
+                          onClick={handleAddToCart}
+                          className={`w-full py-3.5 rounded-full font-bold text-sm transition-all duration-200 shadow-md flex items-center justify-center gap-2 active:scale-95 ${isOutOfStock || isMissingRequiredSelections() || (sucursales.length > 1 && !selectedSucursalId)
+                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
+                            : 'bg-primary hover:bg-primary-dark text-white shadow-primary-light'
+                            }`}
+                        >
+                          <ShoppingBag className="w-5 h-5" />
+                          {isOutOfStock
+                            ? 'Producto Agotado'
+                            : isMissingRequiredSelections()
+                              ? 'Selecciona opciones requeridas'
+                              : (sucursales.length > 1 && !selectedSucursalId)
+                                ? 'Selecciona una Sucursal'
+                                : `Agregar al Carrito • ${formatPrice(activeUnitPrice * quantity)} ${symbol}`}
+                        </button>
                       </div>
 
                       {/* Opciones de Personalización (si aplica) */}
@@ -548,119 +587,45 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
                         </div>
                       )}
 
-                      {/* Instrucciones / Notas especiales */}
-                      <div className="pt-2 border-t border-gray-100">
-                        <label className="text-xs font-bold uppercase tracking-wider text-gray-500 block mb-1.5">
-                          Notas especiales (opcional)
-                        </label>
-                        <textarea
-                          value={comment}
-                          onChange={(e) => setComment(e.target.value)}
-                          placeholder="Ej: Indicaciones sobre la entrega o preparación..."
-                          rows={2}
-                          className="w-full text-xs p-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-all resize-none placeholder:text-gray-400"
-                        />
-                      </div>
-                    </div>
 
-                    {/* BOTONES Y CONTADOR DE CANTIDAD EN FOOTER */}
-                    <div className="pt-4 mt-4 border-t border-gray-100 space-y-3.5">
-                      {/* Selector de Sucursal (Ubicado encima del control de cantidad) */}
-                      {sucursales.length > 0 && (
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <label className="text-xs font-bold uppercase tracking-wider text-primary-dark flex items-center gap-1.5">
-                              <Building2 className="w-3.5 h-3.5 text-primary" />
-                              Sucursal / Almacén de Despacho *
-                            </label>
-                            {sucursales.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={handleGeolocateBranch}
-                                disabled={geoLoading}
-                                className="text-[10px] text-primary hover:text-primary-dark font-semibold hover:underline flex items-center gap-0.5"
-                              >
-                                {geoLoading ? '⌛ Obteniendo...' : '📍 Asignar más cercana'}
-                              </button>
-                            )}
+
+                      {/* DISPONIBILIDAD POR SUCURSAL Y CIUDAD (AL FINAL DE TODO) */}
+                      {Object.keys(stockByCity).length > 0 && (
+                        <div className="pt-3 border-t border-gray-100 space-y-2">
+                          <h4 className="text-[11px] font-bold uppercase tracking-wider text-primary-dark flex items-center gap-1.5">
+                            <Building2 className="w-3.5 h-3.5 text-primary" />
+                            Disponibilidad por Sucursal y Ciudad
+                          </h4>
+
+                          <div className="md:max-h-44 md:overflow-y-auto custom-scrollbar space-y-2 pr-1">
+                            {Object.entries(stockByCity).map(([city, branchList]) => (
+                              <div key={city} className="space-y-1.5 bg-gray-50/70 p-2.5 rounded-xl border border-gray-100">
+                                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1">
+                                  📍 {city}
+                                </span>
+                                <div className="space-y-1 pl-2">
+                                  {branchList.map((b) => (
+                                    <div key={b.id} className="flex items-center justify-between text-xs py-0.5">
+                                      <span className="text-slate-600 font-medium truncate max-w-[210px]" title={b.direccion}>
+                                        {b.nombre} {b.direccion ? `(${b.direccion})` : ''}
+                                      </span>
+                                      {b.isAvailable && b.stock > 0 ? (
+                                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 shrink-0">
+                                          {b.stock} disp.
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 shrink-0">
+                                          Agotado
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-
-                          {sucursales.length > 1 ? (
-                            <select
-                              value={selectedSucursalId}
-                              onChange={(e) => setSelectedSucursalId(e.target.value)}
-                              className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-semibold outline-none transition-all ${!selectedSucursalId
-                                ? 'border-amber-300 bg-amber-50/50 text-amber-900 focus:ring-2 focus:ring-amber-400'
-                                : 'border-gray-200 bg-white text-gray-800 focus:ring-2 focus:ring-primary focus:border-primary'
-                                }`}
-                            >
-                              <option value="">-- Selecciona una Sucursal --</option>
-                              {sucursales.map((suc) => (
-                                <option key={suc.id} value={suc.id}>
-                                  {suc.nombre} ({suc.direccion || suc.ciudad || 'Sede'})
-                                  {suc.distanceKm != null ? ` - a ${suc.distanceKm.toFixed(1)} km` : ''}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <div className="bg-primary-light/40 border border-primary-light rounded-xl p-2.5 text-xs text-primary-dark font-medium flex items-center gap-2">
-                              <Building2 className="w-4 h-4 text-primary shrink-0" />
-                              <span>
-                                <strong>{sucursales[0].nombre}</strong>
-                                {sucursales[0].direccion ? ` - ${sucursales[0].direccion}` : ''}
-                              </span>
-                            </div>
-                          )}
                         </div>
                       )}
-
-                      {/* Control de Cantidad */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                          Cantidad
-                        </span>
-                        <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
-                          <button
-                            type="button"
-                            disabled={quantity <= 1}
-                            onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                            className="p-2 text-gray-600 hover:bg-gray-200 disabled:opacity-30 transition-colors"
-                          >
-                            <Minus className="w-4 h-4" />
-                          </button>
-                          <span className="px-4 py-1.5 text-sm font-semibold text-gray-800">
-                            {quantity}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={quantity >= (product.stock || 99)}
-                            onClick={() => setQuantity(q => q + 1)}
-                            className="p-2 text-gray-600 hover:bg-gray-200 disabled:opacity-30 transition-colors"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Botón Agregar al Carrito */}
-                      <button
-                        type="button"
-                        disabled={isOutOfStock || isMissingRequiredSelections() || (sucursales.length > 1 && !selectedSucursalId)}
-                        onClick={handleAddToCart}
-                        className={`w-full py-3.5 rounded-full font-bold text-sm transition-all duration-200 shadow-md flex items-center justify-center gap-2 active:scale-95 ${isOutOfStock || isMissingRequiredSelections() || (sucursales.length > 1 && !selectedSucursalId)
-                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
-                          : 'bg-primary hover:bg-primary-dark text-white shadow-primary-light'
-                          }`}
-                      >
-                        <ShoppingBag className="w-5 h-5" />
-                        {isOutOfStock
-                          ? 'Producto Agotado'
-                          : isMissingRequiredSelections()
-                            ? 'Selecciona opciones requeridas'
-                            : (sucursales.length > 1 && !selectedSucursalId)
-                              ? 'Selecciona una Sucursal'
-                              : `Agregar al Carrito • ${formatPrice(activeUnitPrice * quantity)} ${symbol}`}
-                      </button>
                     </div>
                   </div>
                 </div>

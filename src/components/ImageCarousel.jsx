@@ -40,7 +40,7 @@ const ImageCarousel = ({ images, name, isOutOfStock }) => {
   }
 
   if (!total) return (
-    <div className="w-full h-full flex items-center justify-center bg-rose-50 text-rose-200 text-sm">
+    <div className="w-full h-full flex items-center justify-center bg-primary-light/30 text-primary/40 text-sm font-medium">
       Sin imagen
     </div>
   )

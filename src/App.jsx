@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import HeroCarousel from './sections/HeroCarousel'
 import ProductList from './sections/ProductList'
+import StoreFeatures from './components/StoreFeatures'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import About from './sections/About'
@@ -23,6 +24,7 @@ const ShopLayout = () => (
   <div>
     <Navbar />
     <HeroCarousel />
+    <StoreFeatures />
     <ProductList />
     <About />
     <Footer />

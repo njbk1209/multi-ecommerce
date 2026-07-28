@@ -334,7 +334,7 @@ const ProductList = () => {
 
   if (!store) {
     return (
-      <div className="py-20 text-center text-rose-400 animate-pulse font-serif">
+      <div className="py-20 text-center text-primary-dark animate-pulse font-serif">
         Cargando tienda...
       </div>
     );
@@ -344,7 +344,7 @@ const ProductList = () => {
     <div
       ref={catalogTopRef}
       id="catalogo"
-      className="max-w-6xl mx-auto px-4 sm:px-0 py-2"
+      className="max-w-6xl mx-auto px-4 py-6"
     >
       {/* Título del catálogo */}
       <div className="mb-6">
@@ -506,10 +506,10 @@ const ProductList = () => {
         >
           <div className="flex flex-col items-center gap-4">
             <div className="relative w-20 h-20 flex items-center justify-center">
-              <div className="absolute inset-0 rounded-full border-4 border-rose-100/80 animate-pulse"></div>
-              <div className="absolute inset-0 rounded-full border-4 border-rose-400 border-t-transparent animate-spin"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-primary-light animate-pulse"></div>
+              <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
             </div>
-            <p className="text-sm font-medium text-rose-700 font-serif animate-pulse tracking-widest uppercase">
+            <p className="text-sm font-medium text-primary-dark font-serif animate-pulse tracking-widest uppercase">
               Cargando catálogo...
             </p>
           </div>
@@ -562,7 +562,7 @@ const ProductList = () => {
           <button
             disabled={currentPage === 1}
             onClick={() => setCurrentPage((prev) => prev - 1)}
-            className="px-3 sm:px-4 py-2 text-sm bg-white border border-rose-200 text-rose-500 rounded-lg disabled:opacity-30 transition-colors hover:bg-rose-50"
+            className="px-3 sm:px-4 py-2 text-sm bg-white border border-primary-light text-primary rounded-lg disabled:opacity-30 transition-colors hover:bg-primary-light/50"
           >
             Anterior
           </button>
@@ -581,8 +581,8 @@ const ProductList = () => {
                   key={page}
                   onClick={() => setCurrentPage(page)}
                   className={`w-8 h-8 rounded-full text-xs font-medium transition-all ${currentPage === page
-                    ? "bg-rose-400 text-white shadow-md"
-                    : "text-rose-400 hover:bg-rose-50"
+                    ? "bg-primary text-white shadow-md"
+                    : "text-primary hover:bg-primary-light/50"
                     }`}
                 >
                   {page}
@@ -594,7 +594,7 @@ const ProductList = () => {
           <button
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage((prev) => prev + 1)}
-            className="px-3 sm:px-4 py-2 text-sm bg-white border border-rose-200 text-rose-500 rounded-lg disabled:opacity-30 transition-colors hover:bg-rose-50"
+            className="px-3 sm:px-4 py-2 text-sm bg-white border border-primary-light text-primary rounded-lg disabled:opacity-30 transition-colors hover:bg-primary-light/50"
           >
             Siguiente
           </button>

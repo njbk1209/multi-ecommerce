@@ -163,7 +163,7 @@ const CatalogFilters = ({
                               placeholder="0.00"
                               value={local.priceMin || ''}
                               onChange={(e) => setLocal(prev => ({ ...prev, priceMin: e.target.value }))}
-                              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-200 focus:ring-2 focus:ring-rose-400/30 focus:border-rose-300 outline-none transition-all placeholder:text-gray-300"
+                              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all placeholder:text-gray-300"
                             />
                           </div>
                           <span className="text-gray-400 text-sm shrink-0 mt-5">—</span>
@@ -176,7 +176,7 @@ const CatalogFilters = ({
                               placeholder="Sin límite"
                               value={local.priceMax || ''}
                               onChange={(e) => setLocal(prev => ({ ...prev, priceMax: e.target.value }))}
-                              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-200 focus:ring-2 focus:ring-rose-400/30 focus:border-rose-300 outline-none transition-all placeholder:text-gray-300"
+                              className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-200 focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all placeholder:text-gray-300"
                             />
                           </div>
                         </div>

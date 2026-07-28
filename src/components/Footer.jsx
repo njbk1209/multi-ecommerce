@@ -5,13 +5,13 @@ import { useCurrency } from "../context/CurrencyContext";
 const Footer = () => {
   const { store } = useCurrency();
   return (
-    <footer className="bg-rose-50 border-t border-rose-100 pt-16 pb-8 px-6">
+    <footer className="bg-primary-light/30 border-t border-primary-light pt-16 pb-8 px-6">
       <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
         {/* Columna 1: Marca */}
         <div>
-          <h3 className="text-2xl font-serif font-semibold text-rose-500 tracking-tight">
+          <h3 className="text-2xl font-serif font-semibold text-primary-dark tracking-tight">
             {store?.comercial_name}
-            <span className="text-rose-300">.</span>
+            <span className="text-primary">.</span>
           </h3>
           <p className="text-gray-500 text-sm leading-relaxed max-w-xs">
             {store?.descripcion}
@@ -25,22 +25,22 @@ const Footer = () => {
           </h4>
           <ul className="space-y-2 text-sm text-gray-600">
             <li>
-              <a href="#inicio" className="hover:text-rose-400">
+              <a href="#inicio" className="hover:text-primary transition-colors">
                 Inicio
               </a>
             </li>
             <li>
-              <a href="#catalogo" className="hover:text-rose-400">
+              <a href="#catalogo" className="hover:text-primary transition-colors">
                 Catálogo
               </a>
             </li>
             <li>
-              <a href="#nosotros" className="hover:text-rose-400">
+              <a href="#nosotros" className="hover:text-primary transition-colors">
                 Nosotros
               </a>
             </li>
             <li>
-              <Link to="/login" className="hover:text-rose-400">
+              <Link to="/login" className="hover:text-primary transition-colors">
                 Administración
               </Link>
             </li>
@@ -61,7 +61,7 @@ const Footer = () => {
                 href={store.instagram_url}
                 target="_blank"
                 rel="noreferrer"
-                className="w-8 h-8 rounded-full bg-white border border-rose-100 flex items-center justify-center text-rose-400 hover:bg-rose-400 hover:text-white transition-all cursor-pointer"
+                className="w-8 h-8 rounded-full bg-white border border-primary-light flex items-center justify-center text-primary hover:bg-primary hover:text-white transition-all cursor-pointer"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -78,7 +78,7 @@ const Footer = () => {
                 href={store.facebook_url}
                 target="_blank"
                 rel="noreferrer"
-                className="w-8 h-8 rounded-full bg-white border border-rose-100 flex items-center justify-center text-rose-400 hover:bg-rose-450 hover:text-white transition-all cursor-pointer"
+                className="w-8 h-8 rounded-full bg-white border border-primary-light flex items-center justify-center text-primary hover:bg-primary-dark hover:text-white transition-all cursor-pointer"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -94,7 +94,7 @@ const Footer = () => {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto pt-8 border-t border-rose-100/50 text-center">
+      <div className="max-w-7xl mx-auto pt-8 border-t border-primary-light/50 text-center">
         <p className="text-[10px] uppercase tracking-[0.2em] text-gray-400">
           &copy; {new Date().getFullYear()} {store?.comercial_name}. Todos los
           derechos reservados.

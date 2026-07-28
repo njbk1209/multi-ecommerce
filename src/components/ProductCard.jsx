@@ -101,12 +101,12 @@ const ProductCard = ({
         </div>
 
         {/* Info */}
-        <div className="p-3.5 text-center flex flex-col justify-between flex-1">
+        <div className="p-2 text-center flex flex-col justify-between flex-1">
           <div>
             <span className="text-xs uppercase tracking-widest text-primary/80 font-semibold">{category}</span>
             <h3
               onClick={handleOpenDetail}
-              className="text-base lg:text-[16px]/5 font-medium text-slate-800 mt-1 cursor-pointer hover:text-primary transition-colors line-clamp-2"
+              className="text-sm lg:text-[16px]/5 font-medium text-slate-800 mt-1 cursor-pointer hover:text-primary transition-colors line-clamp-3"
               title="Ver detalle del producto"
             >
               {name}

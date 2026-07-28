@@ -111,11 +111,11 @@ const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl border border-rose-50 flex flex-col max-h-[85vh] animate-scale-up">
+      <div className="bg-white rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl border border-primary-light flex flex-col max-h-[85vh] animate-scale-up">
         {/* Header */}
-        <div className="p-5 border-b border-rose-50 flex items-center justify-between bg-rose-50/20">
+        <div className="p-5 border-b border-primary-light flex items-center justify-between bg-primary-light/20">
           <div>
-            <span className="text-xs uppercase tracking-widest text-rose-400 font-semibold">
+            <span className="text-xs uppercase tracking-widest text-primary font-semibold">
               Personalizar
             </span>
             <h3 className="text-lg font-bold text-slate-800 mt-0.5">
@@ -124,7 +124,7 @@ const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-rose-100/50 text-slate-400 hover:text-rose-500 transition-colors"
+            className="p-1.5 rounded-full hover:bg-primary-light/50 text-slate-400 hover:text-primary-dark transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -134,7 +134,7 @@ const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-10 space-y-3">
-              <div className="w-10 h-10 border-4 border-rose-400 border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
               <p className="text-sm text-slate-500 font-medium">
                 Cargando opciones...
               </p>
@@ -152,7 +152,7 @@ const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
                     key={group.id}
                     className={`space-y-2 rounded-xl transition-all duration-300 ${
                       isMissing
-                        ? "bg-rose-50/30 border border-rose-100 shadow-sm"
+                        ? "bg-primary-light/30 border border-primary-light shadow-sm"
                         : "border border-transparent"
                     }`}
                   >
@@ -167,7 +167,7 @@ const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
                       </h4>
                       {group.es_obligatorio &&
                         (isMissing ? (
-                          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-rose-100 text-rose-600 rounded animate-pulse">
+                          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-primary-light text-primary-dark rounded animate-pulse">
                             Selección obligatoria
                           </span>
                         ) : (
@@ -196,8 +196,8 @@ const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
                             className={`p-3 text-left rounded-xl border text-sm font-medium transition-all flex items-center justify-between
                               ${
                                 isSelected
-                                  ? "bg-rose-50 border-rose-300 text-rose-700 font-semibold ring-1 ring-rose-300/30"
-                                  : "bg-white border-slate-200 text-slate-700 hover:bg-rose-50/10 hover:border-rose-100"
+                                  ? "bg-primary-light border-primary text-primary-dark font-semibold ring-1 ring-primary/30"
+                                  : "bg-white border-slate-200 text-slate-700 hover:bg-primary-light/20 hover:border-primary-light"
                               }`}
                           >
                             <span>{val.nombre}</span>
@@ -212,7 +212,7 @@ const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
                                 <span
                                   className={
                                     isSelected
-                                      ? "text-rose-600 font-bold"
+                                      ? "text-primary-dark font-bold"
                                       : "text-slate-500"
                                   }
                                 >
@@ -240,7 +240,7 @@ const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   placeholder="Ej: Sin cebolla en la hamburguesa, borde de queso para la pizza, salsas aparte, etc..."
-                  className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-rose-200 focus:border-rose-400 outline-none transition-all resize-none text-slate-700 placeholder-slate-400"
+                  className="w-full border border-slate-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-primary/30 focus:border-primary outline-none transition-all resize-none text-slate-700 placeholder-slate-400"
                   rows={3}
                 />
               </div>
@@ -249,13 +249,13 @@ const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
         </div>
 
         {/* Footer */}
-        <div className="p-5 border-t border-rose-50 bg-slate-50 flex items-center justify-between">
+        <div className="p-5 border-t border-primary-light bg-slate-50 flex items-center justify-between">
           <div className="text-left">
             <p className="text-xs text-slate-400 font-medium">
               Precio Unitario
             </p>
             <div className="flex items-baseline gap-2">
-              <p className="text-lg font-bold text-rose-500">
+              <p className="text-lg font-bold text-primary">
                 ${totalUnitPrice.toFixed(2)}
               </p>
               {totalUnitComparePrice &&
@@ -266,7 +266,7 @@ const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
                 )}
             </div>
             {isMissingRequiredSelections() && (
-              <p className="text-[11px] text-rose-500 font-medium mt-0.5 animate-pulse">
+              <p className="text-[11px] text-primary-dark font-medium mt-0.5 animate-pulse">
                 Faltan opciones obligatorias
               </p>
             )}
@@ -280,7 +280,7 @@ const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
               ${
                 isMissingRequiredSelections() || loading
                   ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
-                  : "bg-rose-500 text-white hover:bg-rose-600 shadow-rose-200"
+                  : "bg-primary text-white hover:bg-primary-dark shadow-primary-light"
               }`}
           >
             <ShoppingBag className="w-4 h-4" />

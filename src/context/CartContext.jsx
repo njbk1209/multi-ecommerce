@@ -182,7 +182,7 @@ export const CartProvider = ({ children }) => {
     }
   };
 
-  const addToCart = (product, selectedOptions = [], comment = '') => {
+  const addToCart = (product, selectedOptions = [], comment = '', initialQty = 1) => {
     // Validar ciudad única en el carrito
     if (cart.length > 0 && product.ciudad) {
       const existingCity = cart.find((i) => i.ciudad)?.ciudad;
@@ -210,12 +210,15 @@ export const CartProvider = ({ children }) => {
     const optionKey = selectedOptions.map(o => o.id).sort().join('_');
     const cartItemId = `${product.id}-${optionKey}-${comment}`;
 
+    const addAmount = Math.max(1, parseInt(initialQty, 10) || 1);
+
     setCart((prev) => {
       const existing = prev.find(item => item.cartItemId === cartItemId);
       if (existing) {
-        if (existing.qty >= product.stock) return prev;
+        const newQty = Math.min(existing.qty + addAmount, product.stock || 999);
+        if (newQty === existing.qty) return prev;
         return prev.map(item =>
-          item.cartItemId === cartItemId ? { ...item, qty: item.qty + 1 } : item
+          item.cartItemId === cartItemId ? { ...item, qty: newQty } : item
         );
       }
       return [...prev, {
@@ -228,7 +231,7 @@ export const CartProvider = ({ children }) => {
         compare_price_bs: itemComparePriceBs,
         selectedOptions,
         comment,
-        qty: 1
+        qty: Math.min(addAmount, product.stock || 999)
       }];
     });
     toast.success(`🛒¡${product.name} agregado al carrito!`);

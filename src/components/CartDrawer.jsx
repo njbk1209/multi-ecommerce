@@ -359,16 +359,23 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
         },
       );
 
-      if (rpcError) throw rpcError;
+      if (rpcError) {
+        console.error("Error devuelto por Supabase al crear pedido:", rpcError);
+        toast.error(`❌ No se pudo guardar el pedido en la base de datos: ${rpcError.message || 'Error desconocido'}. Intenta nuevamente.`, {
+          duration: 6000,
+        });
+        setLoading(false);
+        return; // BLOQUEAR REDIRECCIÓN SI FALLA EL REGISTRO
+      }
+
       console.log("Pedido guardado exitosamente con ID:", pedidoId);
     } catch (dbErr) {
-      console.error("Error al guardar el pedido en Supabase:", dbErr);
-      toast.error(
-        "Ocurrió un inconveniente al registrar la orden, procediendo con WhatsApp...",
-        {
-          duration: 5000,
-        },
-      );
+      console.error("Excepción al intentar crear pedido en Supabase:", dbErr);
+      toast.error("❌ Ocurrió un error al procesar el registro de la orden. Por favor intenta de nuevo.", {
+        duration: 6000,
+      });
+      setLoading(false);
+      return; // BLOQUEAR REDIRECCIÓN SI FALLA EL REGISTRO
     }
 
     const storeWhatsapp = store?.whatsapp || "584245305968";

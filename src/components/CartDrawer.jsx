@@ -167,13 +167,12 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
 
   // Determinar si hay productos pertenecientes a múltiples sucursales distintas
   const uniqueBranchesInCart = new Set(
-    cart.map(
-      (item) =>
-        item.sucursal_id ||
-        item.sucursal?.id ||
-        item.sucursal_nombre ||
-        "principal",
-    ),
+    cart
+      .map(
+        (item) =>
+          item.sucursal_id || item.sucursal?.id || item.sucursal_nombre,
+      )
+      .filter(Boolean),
   );
   const isMultiBranchCart = uniqueBranchesInCart.size > 1;
 
@@ -840,7 +839,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                 </div>
                               )}
 
-                              {(isMultiBranchCart || sucursales.length > 1) && (
+                              {isMultiBranchCart && (
                                 <p className="text-xs text-amber-800 bg-amber-50/90 border border-amber-200 rounded-xl p-3 text-left font-medium leading-relaxed flex items-start gap-2">
                                   <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                                   <span>

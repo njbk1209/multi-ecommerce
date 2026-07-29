@@ -17,6 +17,7 @@ import {
   Package,
   Truck,
   Building2,
+  PackageCheck,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../utils/supabase";
@@ -27,6 +28,7 @@ import OptionsManager from "./OptionsManager";
 import SettingsManager from "./SettingsManager";
 import BranchesManager from "./BranchesManager";
 import BranchInventoryManager from "./BranchInventoryManager";
+import PickingScannerModal from "./PickingScannerModal";
 
 const normalizePhone = (phone) => {
   if (!phone) return "";
@@ -83,6 +85,8 @@ const AdminDashboard = ({ onLogout, session }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [shippingInputs, setShippingInputs] = useState({});
   const [activeTab, setActiveTab] = useState("orders"); // 'orders' | 'products' | 'categories'
+  const [pickedState, setPickedState] = useState({}); // { orderId: { itemId: count } }
+  const [activePickingOrder, setActivePickingOrder] = useState(null);
 
   // Cargar pedidos de Supabase
   const fetchOrders = async (showToast = false) => {
@@ -395,6 +399,34 @@ const AdminDashboard = ({ onLogout, session }) => {
         },
       );
       return;
+    }
+
+    // Si el pedido está en 'preparar' y se intenta avanzar estado, validar picking 100% obligatorio
+    if (
+      order.estado === "preparar" &&
+      (newStatus === "en espera de retiro" || newStatus === "en camino")
+    ) {
+      const items = order.items || [];
+      const currentPicking = pickedState[order.id] || {};
+      const totalTargetQty = items.reduce((acc, i) => acc + (i.cantidad || 1), 0);
+      const totalPickedQty = items.reduce(
+        (acc, i) => acc + (currentPicking[i.id] || 0),
+        0
+      );
+      const isPickingComplete =
+        totalTargetQty > 0 && totalPickedQty >= totalTargetQty;
+
+      if (!isPickingComplete) {
+        toast.error(
+          "⚠️ Debes completar el 100% del picking por código de barras antes de avanzar el pedido.",
+          {
+            duration: 5000,
+            style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
+          }
+        );
+        setActivePickingOrder(order);
+        return;
+      }
     }
 
     try {
@@ -981,6 +1013,31 @@ const AdminDashboard = ({ onLogout, session }) => {
                                           💬 Enviar Cobro (WhatsApp)
                                         </button>
                                       )}
+                                      {order.estado === "preparar" && (() => {
+                                        const items = order.items || [];
+                                        const currentPicking = pickedState[order.id] || {};
+                                        const totalTargetQty = items.reduce((acc, i) => acc + (i.cantidad || 1), 0);
+                                        const totalPickedQty = items.reduce((acc, i) => acc + (currentPicking[i.id] || 0), 0);
+                                        const isPickingComplete = totalTargetQty > 0 && totalPickedQty >= totalTargetQty;
+
+                                        return (
+                                          <button
+                                            onClick={() => setActivePickingOrder(order)}
+                                            className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 active:scale-95 shadow-sm ${
+                                              isPickingComplete
+                                                ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                                                : "bg-amber-500 hover:bg-amber-600 text-white"
+                                            }`}
+                                          >
+                                            <PackageCheck className="w-4 h-4" />
+                                            <span>
+                                              {isPickingComplete
+                                                ? "✓ Picking 100% Validado"
+                                                : `📦 Escanear / Picking (${totalPickedQty}/${totalTargetQty})`}
+                                            </span>
+                                          </button>
+                                        );
+                                      })()}
                                       {order.estado === "en espera de retiro" &&
                                         order.metodo_entrega === "pickup" && (
                                           <button
@@ -1241,6 +1298,25 @@ const AdminDashboard = ({ onLogout, session }) => {
         {activeTab === "options" && <OptionsManager />}
         {activeTab === "settings" && <SettingsManager />}
       </main>
+
+      {/* Modal de Picking por Código de Barras */}
+      {activePickingOrder && (
+        <PickingScannerModal
+          isOpen={!!activePickingOrder}
+          onClose={() => setActivePickingOrder(null)}
+          order={activePickingOrder}
+          pickedState={pickedState}
+          setPickedState={setPickedState}
+          onCompletePicking={(orderToComplete) => {
+            const targetState =
+              orderToComplete.metodo_entrega === "pickup"
+                ? "en espera de retiro"
+                : "en camino";
+            setActivePickingOrder(null);
+            handleUpdateStatus(orderToComplete.id, targetState);
+          }}
+        />
+      )}
     </div>
   );
 };

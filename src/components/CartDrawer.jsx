@@ -284,7 +284,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
       const { data: pedidoId, error: rpcError } = await supabase.rpc(
         "crear_pedido",
         {
-          p_store_id: store.id,
+          p_store_id: Number(store.id),
           p_nombre_cliente: `${form.nombre} (${cedulaCompleta})`,
           p_whatsapp_cliente: form.whatsapp,
           p_metodo_entrega: deliveryMethod,
@@ -295,7 +295,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
           p_moneda_activa: currency,
           p_lugar_pago: lugarPago,
           p_items: cart.map((item) => ({
-            producto_id: item.id ? String(item.id) : null,
+            producto_id: item.id ? Number(item.id) : null,
             nombre_producto: item.name,
             cantidad: item.qty,
             precio_unitario: item.price,
@@ -303,7 +303,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
             opciones_seleccionadas: item.selectedOptions || null,
             sucursal_id:
               item.sucursal_id || item.sucursal?.id
-                ? String(item.sucursal_id || item.sucursal?.id)
+                ? Number(item.sucursal_id || item.sucursal?.id)
                 : null,
             sucursal_nombre:
               item.sucursal?.nombre || item.sucursal_nombre || null,

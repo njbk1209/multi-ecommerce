@@ -501,10 +501,10 @@ const AdminDashboard = ({ onLogout, session }) => {
   return (
     <div className="min-h-screen bg-zinc-50 font-sans selection:bg-zinc-800 selection:text-white">
       {/* Barra de navegación superior */}
-      <header className="sticky top-0 z-40 bg-white border-b border-zinc-200/80 px-6 py-4">
+      <header className="sticky top-0 z-40 bg-white border-b border-zinc-200/80 px-4 sm:px-6 py-3 sm:py-4">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-serif text-zinc-950 font-semibold tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-serif text-zinc-950 font-semibold tracking-tight">
               Admin
             </h1>
             <span className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
@@ -512,7 +512,7 @@ const AdminDashboard = ({ onLogout, session }) => {
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <span className="hidden sm:inline text-xs font-medium text-zinc-500">
               {session?.user?.email}
             </span>
@@ -521,7 +521,7 @@ const AdminDashboard = ({ onLogout, session }) => {
                 onLogout();
                 navigate("/");
               }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 border border-zinc-200 hover:border-zinc-900 text-xs font-semibold text-zinc-600 hover:text-zinc-900 rounded-xl transition-all hover:shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-zinc-200 hover:border-zinc-900 text-xs font-semibold text-zinc-600 hover:text-zinc-900 rounded-xl transition-all hover:shadow-sm"
             >
               <LogOut className="w-3.5 h-3.5" />
               Salir
@@ -530,12 +530,12 @@ const AdminDashboard = ({ onLogout, session }) => {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
-        {/* Pestañas de Navegación del Panel */}
-        <div className="flex border-b border-zinc-200 gap-6 mb-2">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
+        {/* Pestañas de Navegación del Panel (Scroll horizontal fluido en móvil) */}
+        <div className="flex border-b border-zinc-200 gap-3 sm:gap-6 mb-2 overflow-x-auto no-scrollbar scrollbar-none whitespace-nowrap px-1 pb-1 shrink-0">
           <button
             onClick={() => setActiveTab("orders")}
-            className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
+            className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all shrink-0 active:scale-95 px-1
               ${activeTab === "orders"
                 ? "border-zinc-900 text-zinc-950 font-bold"
                 : "border-transparent text-zinc-400 hover:text-zinc-600"
@@ -545,7 +545,7 @@ const AdminDashboard = ({ onLogout, session }) => {
           </button>
           <button
             onClick={() => setActiveTab("products")}
-            className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
+            className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all shrink-0 active:scale-95 px-1
               ${activeTab === "products"
                 ? "border-zinc-900 text-zinc-950 font-bold"
                 : "border-transparent text-zinc-400 hover:text-zinc-600"
@@ -555,7 +555,7 @@ const AdminDashboard = ({ onLogout, session }) => {
           </button>
           <button
             onClick={() => setActiveTab("branches")}
-            className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
+            className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all shrink-0 active:scale-95 px-1
               ${activeTab === "branches"
                 ? "border-zinc-900 text-zinc-950 font-bold"
                 : "border-transparent text-zinc-400 hover:text-zinc-600"
@@ -565,17 +565,17 @@ const AdminDashboard = ({ onLogout, session }) => {
           </button>
           <button
             onClick={() => setActiveTab("inventory")}
-            className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
+            className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all shrink-0 active:scale-95 px-1
               ${activeTab === "inventory"
                 ? "border-zinc-900 text-zinc-950 font-bold"
                 : "border-transparent text-zinc-400 hover:text-zinc-600"
               }`}
           >
-            📦 Inventario Almacén
+            📦 Inventario
           </button>
           <button
             onClick={() => setActiveTab("categories")}
-            className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
+            className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all shrink-0 active:scale-95 px-1
               ${activeTab === "categories"
                 ? "border-zinc-900 text-zinc-950 font-bold"
                 : "border-transparent text-zinc-400 hover:text-zinc-600"
@@ -585,7 +585,7 @@ const AdminDashboard = ({ onLogout, session }) => {
           </button>
           <button
             onClick={() => setActiveTab("options")}
-            className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
+            className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all shrink-0 active:scale-95 px-1
               ${activeTab === "options"
                 ? "border-zinc-900 text-zinc-950 font-bold"
                 : "border-transparent text-zinc-400 hover:text-zinc-600"
@@ -595,7 +595,7 @@ const AdminDashboard = ({ onLogout, session }) => {
           </button>
           <button
             onClick={() => setActiveTab("settings")}
-            className={`pb-2.5 text-sm font-semibold border-b-2 transition-all active:scale-95
+            className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all shrink-0 active:scale-95 px-1
               ${activeTab === "settings"
                 ? "border-zinc-900 text-zinc-950 font-bold"
                 : "border-transparent text-zinc-400 hover:text-zinc-600"

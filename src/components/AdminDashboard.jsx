@@ -18,6 +18,7 @@ import {
   Truck,
   Building2,
   PackageCheck,
+  Calendar,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../utils/supabase";
@@ -81,6 +82,7 @@ const AdminDashboard = ({ onLogout, session }) => {
   const { store, exchangeRate } = useCurrency();
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState("all"); // 'all' | 'pendiente' | 'preparar' | 'en espera de retiro' | 'en camino' | 'finalizado' | 'cancelado'
+  const [dateFilter, setDateFilter] = useState("all"); // 'all' | 'today' | '7days' | 'month'
   const [expandedOrders, setExpandedOrders] = useState({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [shippingInputs, setShippingInputs] = useState({});
@@ -491,30 +493,76 @@ const AdminDashboard = ({ onLogout, session }) => {
     }));
   };
 
-  // Cálculos de métricas globales en tiempo real
-  const totalOrdersCount = orders.length;
-  const pendingCount = orders.filter((o) => o.estado === "pendiente").length;
-  const prepararCount = orders.filter((o) => o.estado === "preparar").length;
-  const esperaCount = orders.filter(
+  // Helper para verificar si un pedido coincide con el filtro de fecha
+  const matchesDateFilter = (createdAtIso, filterType) => {
+    if (filterType === "all") return true;
+    if (!createdAtIso) return true;
+
+    const orderDate = new Date(createdAtIso);
+    const now = new Date();
+
+    if (filterType === "today") {
+      return (
+        orderDate.getDate() === now.getDate() &&
+        orderDate.getMonth() === now.getMonth() &&
+        orderDate.getFullYear() === now.getFullYear()
+      );
+    }
+
+    if (filterType === "7days") {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(now.getDate() - 7);
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+      return orderDate >= sevenDaysAgo;
+    }
+
+    if (filterType === "month") {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(now.getDate() - 30);
+      thirtyDaysAgo.setHours(0, 0, 0, 0);
+      return orderDate >= thirtyDaysAgo;
+    }
+
+    return true;
+  };
+
+  // Pedidos filtrados por fecha para métricas
+  const dateFilteredOrders = orders.filter((o) =>
+    matchesDateFilter(o.created_at, dateFilter),
+  );
+
+  // Cálculos de métricas según el rango de fecha seleccionado
+  const totalOrdersCount = dateFilteredOrders.length;
+  const pendingCount = dateFilteredOrders.filter(
+    (o) => o.estado === "pendiente",
+  ).length;
+  const prepararCount = dateFilteredOrders.filter(
+    (o) => o.estado === "preparar",
+  ).length;
+  const esperaCount = dateFilteredOrders.filter(
     (o) => o.estado === "en espera de retiro",
   ).length;
-  const enCaminoCount = orders.filter((o) => o.estado === "en camino").length;
-  const finalizadoCount = orders.filter(
+  const enCaminoCount = dateFilteredOrders.filter(
+    (o) => o.estado === "en camino",
+  ).length;
+  const finalizadoCount = dateFilteredOrders.filter(
     (o) => o.estado === "finalizado",
   ).length;
-  const canceladoCount = orders.filter((o) => o.estado === "cancelado").length;
+  const canceladoCount = dateFilteredOrders.filter(
+    (o) => o.estado === "cancelado",
+  ).length;
 
   // Calcular ingresos totales sumando los pedidos que no están cancelados
-  const revenueUSD = orders
+  const revenueUSD = dateFilteredOrders
     .filter((o) => o.estado !== "cancelado")
     .reduce((acc, o) => acc + o.total_usd, 0);
 
-  const revenueBS = orders
+  const revenueBS = dateFilteredOrders
     .filter((o) => o.estado !== "cancelado")
     .reduce((acc, o) => acc + o.total_bs, 0);
 
-  // Filtrado de listado
-  const filteredOrders = orders.filter((order) => {
+  // Filtrado final de listado
+  const filteredOrders = dateFilteredOrders.filter((order) => {
     if (filter === "all") return true;
     return order.estado === filter;
   });
@@ -699,6 +747,36 @@ const AdminDashboard = ({ onLogout, session }) => {
                 </div>
               </div>
             </section>
+            {/* Filtros por Rango de Fecha */}
+            <div className="bg-white border border-zinc-200/80 rounded-2xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-zinc-500" />
+                <span className="text-xs font-bold text-zinc-800 uppercase tracking-wider">
+                  Filtrar por Período:
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 w-full sm:w-auto">
+                {[
+                  { id: "all", label: "🗓️ Todos" },
+                  { id: "today", label: "⚡ Hoy" },
+                  { id: "7days", label: "📅 Últimos 7 días" },
+                  { id: "month", label: "📆 Último mes" },
+                ].map((btn) => (
+                  <button
+                    key={btn.id}
+                    onClick={() => setDateFilter(btn.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 border ${
+                      dateFilter === btn.id
+                        ? "bg-zinc-950 border-zinc-950 text-white shadow-xs"
+                        : "bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-white hover:border-zinc-300"
+                    }`}
+                  >
+                    {btn.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Encabezado del listado y filtros */}
             <section className="flex flex-col md:flex-row md:items-center justify-between gap-4">

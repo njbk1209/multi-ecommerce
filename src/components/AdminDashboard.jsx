@@ -840,15 +840,28 @@ const AdminDashboard = ({ onLogout, session }) => {
                           </p>
                         </div>
 
-                        {/* Monto Total */}
-                        <div className="space-y-1 text-left md:text-right">
-                          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                        {/* Monto Total (USD destacado + Bs gris claro debajo) */}
+                        <div className="space-y-0.5 text-left md:text-right">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
                             Monto Total
                           </p>
-                          <p className="text-sm font-bold text-zinc-900">
-                            {order.moneda_activa === "USD"
-                              ? `$${order.total_usd.toFixed(2)}`
-                              : `${order.total_bs.toLocaleString("es-VE")} Bs`}
+                          <p className="text-base font-bold text-zinc-950 font-serif leading-tight">
+                            ${order.total_usd?.toFixed(2)} USD
+                          </p>
+                          <p className="text-[11px] font-medium text-zinc-400 font-mono leading-tight">
+                            ≈{" "}
+                            {order.total_bs
+                              ? order.total_bs.toLocaleString("es-VE", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })
+                              : (
+                                  order.total_usd * (exchangeRate || 1)
+                                ).toLocaleString("es-VE", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}{" "}
+                            Bs
                           </p>
                         </div>
 

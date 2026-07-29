@@ -260,6 +260,9 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
       ciudad: selectedSucursalObj?.ciudad || product.ciudad,
       sucursal_id: selectedSucursalObj?.id,
       sucursal: selectedSucursalObj,
+      sku: product.sku || null,
+      barcode: product.barcode || product.codigo_barra || null,
+      codigo_barra: product.codigo_barra || product.barcode || null,
     }
     const success = addToCart(productData, selectedOptionsFlat, comment, quantity)
     if (success !== false) {

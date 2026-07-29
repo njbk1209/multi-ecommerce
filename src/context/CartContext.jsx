@@ -84,6 +84,9 @@ export const CartProvider = ({ children }) => {
                 compare_price: freshComparePrice,
                 stock: fresh.stock,
                 image: mainImage,
+                sku: fresh.sku || item.sku || null,
+                barcode: fresh.barcode || fresh.codigo_barra || item.barcode || item.codigo_barra || null,
+                codigo_barra: fresh.codigo_barra || fresh.barcode || item.codigo_barra || item.barcode || null,
                 qty
               };
             })
@@ -164,6 +167,9 @@ export const CartProvider = ({ children }) => {
             compare_price_bs,
             stock: fresh.stock,
             image: mainImage,
+            sku: fresh.sku || item.sku || null,
+            barcode: fresh.barcode || fresh.codigo_barra || item.barcode || item.codigo_barra || null,
+            codigo_barra: fresh.codigo_barra || fresh.barcode || item.codigo_barra || item.barcode || null,
             qty
           };
         })
@@ -231,6 +237,9 @@ export const CartProvider = ({ children }) => {
         compare_price_bs: itemComparePriceBs,
         selectedOptions,
         comment,
+        sku: product.sku || null,
+        barcode: product.barcode || product.codigo_barra || null,
+        codigo_barra: product.codigo_barra || product.barcode || null,
         qty: Math.min(addAmount, product.stock || 999)
       }];
     });

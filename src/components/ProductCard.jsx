@@ -18,6 +18,8 @@ const ProductCard = ({
   hasModifiers = false,
   optionGroups = [],
   sku,
+  barcode,
+  codigo_barra,
 }) => {
   const { addToCart } = useCart()
   const { isBS } = useCurrency()
@@ -57,7 +59,9 @@ const ProductCard = ({
     precio_por_tamano,
     hasModifiers,
     optionGroups,
-    sku,
+    sku: sku || null,
+    barcode: barcode || codigo_barra || null,
+    codigo_barra: codigo_barra || barcode || null,
   }
 
   const handleOpenDetail = (e) => {

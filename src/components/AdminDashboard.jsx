@@ -410,7 +410,7 @@ const AdminDashboard = ({ onLogout, session }) => {
       const currentPicking = pickedState[order.id] || {};
       const totalTargetQty = items.reduce((acc, i) => acc + (i.cantidad || 1), 0);
       const totalPickedQty = items.reduce(
-        (acc, i) => acc + (currentPicking[i.id] || 0),
+        (acc, i) => acc + (currentPicking[i.id] ?? (i.cantidad_recolectada || 0)),
         0
       );
       const isPickingComplete =
@@ -1017,7 +1017,10 @@ const AdminDashboard = ({ onLogout, session }) => {
                                         const items = order.items || [];
                                         const currentPicking = pickedState[order.id] || {};
                                         const totalTargetQty = items.reduce((acc, i) => acc + (i.cantidad || 1), 0);
-                                        const totalPickedQty = items.reduce((acc, i) => acc + (currentPicking[i.id] || 0), 0);
+                                        const totalPickedQty = items.reduce(
+                                          (acc, i) => acc + (currentPicking[i.id] ?? (i.cantidad_recolectada || 0)),
+                                          0
+                                        );
                                         const isPickingComplete = totalTargetQty > 0 && totalPickedQty >= totalTargetQty;
 
                                         return (
@@ -1307,6 +1310,7 @@ const AdminDashboard = ({ onLogout, session }) => {
           order={activePickingOrder}
           pickedState={pickedState}
           setPickedState={setPickedState}
+          onRefreshOrders={fetchOrders}
           onCompletePicking={(orderToComplete) => {
             const targetState =
               orderToComplete.metodo_entrega === "pickup"

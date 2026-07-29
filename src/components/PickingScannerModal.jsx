@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Html5Qrcode } from "html5-qrcode";
+import { supabase } from "../utils/supabase";
 import {
   playSuccessBeep,
   playErrorBeep,
@@ -27,33 +28,103 @@ export default function PickingScannerModal({
   onCompletePicking,
   pickedState,
   setPickedState,
+  onRefreshOrders,
 }) {
   const [manualCode, setManualCode] = useState("");
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [selectedBranch, setSelectedBranch] = useState("all");
 
   const html5QrcodeScannerRef = useRef(null);
   const barcodeBufferRef = useRef("");
   const lastKeyTimeRef = useRef(Date.now());
   const manualInputRef = useRef(null);
 
-  // Inicializar estado de picking por pedido
-  const currentPicking = pickedState[order?.id] || {};
-
-  // Obtener todos los ítems del pedido
+  // Ítems del pedido
   const items = order?.items || [];
 
-  // Calcular total de cantidades requeridas y recolectadas
+  // Extraer lista única de sucursales en este pedido
+  const sucursalesInOrder = Array.from(
+    new Set(
+      items.map(
+        (i) => i.sucursal_nombre || i.sucursal?.nombre || "Sucursal Principal"
+      )
+    )
+  );
+
+  // Sincronizar estado inicial de picking desde Supabase (cantidad_recolectada de DB)
+  useEffect(() => {
+    if (!order?.id || !items.length) return;
+
+    const dbPickingMap = {};
+    items.forEach((item) => {
+      dbPickingMap[item.id] = item.cantidad_recolectada || 0;
+    });
+
+    setPickedState((prev) => ({
+      ...prev,
+      [order.id]: {
+        ...dbPickingMap,
+        ...(prev[order.id] || {}),
+      },
+    }));
+  }, [order?.id, items]);
+
+  // Suscripción Realtime a cambios en la tabla 'pedido_item' para sincronización entre sucursales
+  useEffect(() => {
+    if (!isOpen || !order?.id) return;
+
+    const channel = supabase
+      .channel(`picking_order_${order.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "pedido_item",
+          filter: `pedido_id=eq.${order.id}`,
+        },
+        (payload) => {
+          const updatedItem = payload.new;
+          if (updatedItem && updatedItem.id) {
+            setPickedState((prev) => ({
+              ...prev,
+              [order.id]: {
+                ...(prev[order.id] || {}),
+                [updatedItem.id]: updatedItem.cantidad_recolectada || 0,
+              },
+            }));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isOpen, order?.id]);
+
+  const currentPicking = pickedState[order?.id] || {};
+
+  // Totales globales
   const totalTargetQty = items.reduce((acc, item) => acc + (item.cantidad || 1), 0);
   const totalPickedQty = items.reduce((acc, item) => {
-    const current = currentPicking[item.id] || 0;
+    const current = currentPicking[item.id] ?? (item.cantidad_recolectada || 0);
     return acc + current;
   }, 0);
 
   const isFullyPicked = totalTargetQty > 0 && totalPickedQty >= totalTargetQty;
 
-  // Auto-enfocar el input al abrir el modal para capturar la pistola física
+  // Filtrar ítems por sucursal seleccionada
+  const filteredItems = items.filter((item) => {
+    if (selectedBranch === "all") return true;
+    const bName =
+      item.sucursal_nombre || item.sucursal?.nombre || "Sucursal Principal";
+    return bName === selectedBranch;
+  });
+
+  // Auto-enfocar el input de escaneo al abrir modal
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => {
@@ -62,12 +133,11 @@ export default function PickingScannerModal({
     }
   }, [isOpen]);
 
-  // Detector de lector de código de barras físico (USB/HID Keyboard Emulator)
+  // Detector de pistola lectora de código de barras USB/HID (Pulsaciones súper rápidas)
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (e) => {
-      // Ignorar si el usuario está escribiendo explícitamente en un input de texto distinto al scanner
       const isInput =
         document.activeElement?.tagName === "INPUT" ||
         document.activeElement?.tagName === "TEXTAREA";
@@ -84,7 +154,6 @@ export default function PickingScannerModal({
           processScannedBarcode(scanned);
         }
       } else if (e.key.length === 1) {
-        // Si las pulsaciones son ultrarrápidas (<40ms), pertenecen a la pistola lectora
         if (timeDiff < 50 || !isInput) {
           barcodeBufferRef.current += e.key;
         } else {
@@ -97,7 +166,7 @@ export default function PickingScannerModal({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, order, currentPicking]);
 
-  // Iniciar/Detener escáner con la cámara del dispositivo
+  // Iniciar / Detener Cámara Móvil
   const toggleCameraScanner = async () => {
     if (isCameraActive) {
       await stopCamera();
@@ -123,9 +192,7 @@ export default function PickingScannerModal({
           (decodedText) => {
             processScannedBarcode(decodedText);
           },
-          (errorMessage) => {
-            // Ignorar errores continuos de búsqueda de frame
-          }
+          () => {}
         );
       } catch (err) {
         console.error("Error al iniciar cámara:", err);
@@ -158,12 +225,12 @@ export default function PickingScannerModal({
     };
   }, []);
 
-  // Procesar código de barras escaneado (Físico, Cámara o Manual)
-  const processScannedBarcode = (rawCode) => {
+  // Procesar código escaneado con persistencia directa en Supabase
+  const processScannedBarcode = async (rawCode) => {
     if (!rawCode) return;
     const cleanCode = rawCode.trim().toLowerCase();
 
-    // Buscar el ítem correspondiente en el pedido
+    // Buscar ítem en el pedido (por barcode o sku)
     const matchingItem = items.find((item) => {
       const barcode = (item.codigo_barra || item.barcode || "").trim().toLowerCase();
       const sku = (item.sku || "").trim().toLowerCase();
@@ -180,7 +247,7 @@ export default function PickingScannerModal({
       return;
     }
 
-    const currentQty = currentPicking[matchingItem.id] || 0;
+    const currentQty = currentPicking[matchingItem.id] ?? (matchingItem.cantidad_recolectada || 0);
 
     if (currentQty >= matchingItem.cantidad) {
       if (soundEnabled) playErrorBeep();
@@ -188,7 +255,6 @@ export default function PickingScannerModal({
         `⚠️ "${matchingItem.nombre_producto}" ya está 100% recolectado (${currentQty}/${matchingItem.cantidad}).`,
         {
           duration: 4000,
-          icon: "⚠️",
           style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
         }
       );
@@ -196,27 +262,40 @@ export default function PickingScannerModal({
       return;
     }
 
-    // Incrementar conteo de picking
     const nextQty = currentQty + 1;
-    const updatedPicking = {
-      ...pickedState,
+
+    // Actualización optimista del estado local
+    setPickedState((prev) => ({
+      ...prev,
       [order.id]: {
-        ...currentPicking,
+        ...(prev[order.id] || {}),
         [matchingItem.id]: nextQty,
       },
-    };
+    }));
 
-    setPickedState(updatedPicking);
     setManualCode("");
 
-    // Calcular si con este ítem se completa el 100% del pedido
+    // PERSISTIR EN SUPABASE (public.pedido_item)
+    try {
+      const { error: dbError } = await supabase
+        .from("pedido_item")
+        .update({ cantidad_recolectada: nextQty })
+        .eq("id", matchingItem.id);
+
+      if (dbError) throw dbError;
+    } catch (err) {
+      console.error("Error al persistir cantidad_recolectada en Supabase:", err);
+      toast.error("⚠️ No se pudo guardar la lectura en la base de datos.");
+    }
+
+    // Notificaciones y Sonido Feedback
     const newTotalPicked = totalPickedQty + 1;
     const newIsComplete = newTotalPicked >= totalTargetQty;
 
     if (newIsComplete) {
       if (soundEnabled) playCompleteFanfare();
       toast.success(
-        `🎉 ¡PICKING 100% COMPLETADO! Puedes avanzar el pedido a "En espera de retiro".`,
+        `🎉 ¡PICKING GLOBAL COMPLETADO AL 100%!`,
         {
           duration: 6000,
           style: { background: "#166534", color: "#fff", borderRadius: "12px" },
@@ -224,17 +303,25 @@ export default function PickingScannerModal({
       );
     } else if (nextQty === matchingItem.cantidad) {
       if (soundEnabled) playSuccessBeep();
-      toast.success(`✅ ¡${matchingItem.nombre_producto} completado! (${nextQty}/${matchingItem.cantidad})`, {
-        duration: 3000,
-        style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
-      });
+      toast.success(
+        `✅ ¡${matchingItem.nombre_producto} completado! (${nextQty}/${matchingItem.cantidad})`,
+        {
+          duration: 3000,
+          style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
+        }
+      );
     } else {
       if (soundEnabled) playSuccessBeep();
-      toast.success(`✓ ${matchingItem.nombre_producto} (+1) [${nextQty}/${matchingItem.cantidad}]`, {
-        duration: 2500,
-        style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
-      });
+      toast.success(
+        `✓ ${matchingItem.nombre_producto} (+1) [${nextQty}/${matchingItem.cantidad}]`,
+        {
+          duration: 2500,
+          style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
+        }
+      );
     }
+
+    if (onRefreshOrders) onRefreshOrders();
   };
 
   const handleManualSubmit = (e) => {
@@ -244,14 +331,33 @@ export default function PickingScannerModal({
     }
   };
 
-  const handleResetPicking = () => {
-    setPickedState({
-      ...pickedState,
-      [order.id]: {},
-    });
-    toast.success("Conteo de picking reiniciado para este pedido.", {
-      style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
-    });
+  const handleResetPicking = async () => {
+    try {
+      const itemIds = items.map((i) => i.id);
+      const { error } = await supabase
+        .from("pedido_item")
+        .update({ cantidad_recolectada: 0 })
+        .in("id", itemIds);
+
+      if (error) throw error;
+
+      const resetMap = {};
+      items.forEach((i) => (resetMap[i.id] = 0));
+
+      setPickedState((prev) => ({
+        ...prev,
+        [order.id]: resetMap,
+      }));
+
+      toast.success("Conteo de picking reiniciado en base de datos.", {
+        style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
+      });
+
+      if (onRefreshOrders) onRefreshOrders();
+    } catch (err) {
+      console.error("Error al reiniciar picking:", err);
+      toast.error("Error al reiniciar picking en la base de datos.");
+    }
   };
 
   if (!isOpen || !order) return null;
@@ -263,7 +369,7 @@ export default function PickingScannerModal({
 
   return (
     <div className="fixed inset-0 z-100 bg-zinc-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200">
-      <div className="bg-white border border-zinc-200 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="bg-white border border-zinc-200 w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* ENCABEZADO MODAL */}
         <div className="bg-zinc-950 text-white px-5 py-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -287,7 +393,11 @@ export default function PickingScannerModal({
               title={soundEnabled ? "Desactivar sonido" : "Activar sonido"}
               className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors"
             >
-              {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-rose-400" />}
+              {soundEnabled ? (
+                <Volume2 className="w-4 h-4 text-emerald-400" />
+              ) : (
+                <VolumeX className="w-4 h-4 text-rose-400" />
+              )}
             </button>
             <button
               type="button"
@@ -302,22 +412,22 @@ export default function PickingScannerModal({
           </div>
         </div>
 
-        {/* BARRA DE PROGRESO DE PICKING */}
-        <div className="bg-zinc-900 px-5 py-3 border-t border-zinc-800 shrink-0">
-          <div className="flex items-center justify-between text-xs text-zinc-300 font-semibold mb-1.5">
+        {/* BARRA DE PROGRESO GLOBAL */}
+        <div className="bg-zinc-900 px-5 py-3 border-t border-zinc-800 shrink-0 space-y-2">
+          <div className="flex items-center justify-between text-xs text-zinc-300 font-semibold">
             <span className="flex items-center gap-1.5">
-              <span>Avance de Verificación:</span>
+              <span>Picking Global:</span>
               <span className="font-bold text-white">
                 {totalPickedQty} de {totalTargetQty} ítems ({progressPercent}%)
               </span>
             </span>
             {isFullyPicked ? (
               <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3 text-emerald-400" /> 100% COMPLETADO
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" /> 100% COMPLETADO EN BD
               </span>
             ) : (
               <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                EN PROCESO
+                Sincronizado en Tiempo Real ⚡
               </span>
             )}
           </div>
@@ -332,6 +442,67 @@ export default function PickingScannerModal({
             />
           </div>
         </div>
+
+        {/* PESTAÑAS POR SUCURSAL / ALMACÉN */}
+        {sucursalesInOrder.length > 1 && (
+          <div className="bg-zinc-100 px-5 py-2 border-b border-zinc-200 flex items-center gap-2 overflow-x-auto shrink-0 whitespace-nowrap">
+            <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1">
+              <Building2 className="w-3.5 h-3.5" /> Filtrar Almacén:
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setSelectedBranch("all")}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                selectedBranch === "all"
+                  ? "bg-zinc-950 text-white shadow-xs"
+                  : "bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50"
+              }`}
+            >
+              Todas ({items.reduce((sum, i) => sum + (currentPicking[i.id] || 0), 0)}/{totalTargetQty})
+            </button>
+
+            {sucursalesInOrder.map((sucName) => {
+              const sucItems = items.filter(
+                (i) =>
+                  (i.sucursal_nombre || i.sucursal?.nombre || "Sucursal Principal") ===
+                  sucName
+              );
+              const branchTarget = sucItems.reduce((sum, i) => sum + (i.cantidad || 1), 0);
+              const branchPicked = sucItems.reduce(
+                (sum, i) => sum + (currentPicking[i.id] || 0),
+                0
+              );
+              const isBranchDone = branchTarget > 0 && branchPicked >= branchTarget;
+
+              return (
+                <button
+                  key={sucName}
+                  type="button"
+                  onClick={() => setSelectedBranch(sucName)}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    selectedBranch === sucName
+                      ? "bg-zinc-950 text-white shadow-xs"
+                      : isBranchDone
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      : "bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50"
+                  }`}
+                >
+                  <span>{sucName}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                      isBranchDone
+                        ? "bg-emerald-200 text-emerald-900"
+                        : "bg-zinc-200 text-zinc-700"
+                    }`}
+                  >
+                    {branchPicked}/{branchTarget}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* CONTENEDOR SCROLLEABLE PRINCIPAL */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4 min-h-0">
@@ -350,7 +521,10 @@ export default function PickingScannerModal({
                   Cerrar Cámara
                 </button>
               </div>
-              <div id="reader" className="w-full rounded-xl overflow-hidden border border-zinc-700 bg-black min-h-[180px]" />
+              <div
+                id="reader"
+                className="w-full rounded-xl overflow-hidden border border-zinc-700 bg-black min-h-[180px]"
+              />
               {cameraError && (
                 <p className="text-xs text-rose-400 font-medium">{cameraError}</p>
               )}
@@ -396,24 +570,28 @@ export default function PickingScannerModal({
           {/* LISTA DE ARTÍCULOS PARA RECOLECTAR */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-zinc-500 px-1">
-              <span>Artículos del Pedido</span>
+              <span>
+                Artículos ({selectedBranch === "all" ? "Todas las Sucursales" : selectedBranch})
+              </span>
               <button
                 type="button"
                 onClick={handleResetPicking}
                 className="text-[10px] text-zinc-400 hover:text-zinc-700 font-semibold flex items-center gap-1 hover:underline"
               >
-                <RefreshCw className="w-3 h-3" /> Reiniciar conteo
+                <RefreshCw className="w-3 h-3" /> Reiniciar conteo BD
               </button>
             </div>
 
             <div className="divide-y divide-zinc-100 border border-zinc-200/80 rounded-2xl bg-white overflow-hidden shadow-2xs">
-              {items.map((item) => {
-                const pickedCount = currentPicking[item.id] || 0;
+              {filteredItems.map((item) => {
+                const pickedCount = currentPicking[item.id] ?? (item.cantidad_recolectada || 0);
                 const targetQty = item.cantidad || 1;
                 const isItemComplete = pickedCount >= targetQty;
                 const isItemPartial = pickedCount > 0 && !isItemComplete;
 
                 const barcode = item.codigo_barra || item.barcode;
+                const sucName =
+                  item.sucursal_nombre || item.sucursal?.nombre || "Sucursal Principal";
 
                 return (
                   <div
@@ -430,10 +608,18 @@ export default function PickingScannerModal({
                       <div className="flex items-center gap-2 flex-wrap">
                         <span
                           className={`font-bold text-sm ${
-                            isItemComplete ? "text-emerald-900 line-through opacity-85" : "text-zinc-800"
+                            isItemComplete
+                              ? "text-emerald-900 line-through opacity-85"
+                              : "text-zinc-800"
                           }`}
                         >
                           {item.nombre_producto}
+                        </span>
+
+                        {/* Tag de Sucursal */}
+                        <span className="text-[10px] bg-zinc-100 text-zinc-600 border border-zinc-200 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
+                          <Building2 className="w-3 h-3 text-zinc-400" />
+                          {sucName}
                         </span>
 
                         {/* Badges de Modificadores */}
@@ -500,11 +686,11 @@ export default function PickingScannerModal({
             {isFullyPicked ? (
               <span className="text-emerald-700 font-semibold flex items-center gap-1">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                ¡Todos los artículos validados correctamente!
+                ¡Todas las sucursales completaron el picking en Supabase!
               </span>
             ) : (
               <span className="text-amber-800 font-medium">
-                Escanea cada producto hasta alcanzar el 100% para avanzar.
+                Escanea cada producto hasta alcanzar el 100% para avanzar el pedido.
               </span>
             )}
           </div>

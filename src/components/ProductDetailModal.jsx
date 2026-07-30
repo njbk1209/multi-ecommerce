@@ -21,6 +21,22 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
   const [branchStockList, setBranchStockList] = useState([])
   const [geoLoading, setGeoLoading] = useState(false)
 
+  // Helper para obtener el stock y disponibilidad de una sucursal específica
+  const getBranchStockInfo = (sucursalId) => {
+    if (!sucursalId) return { stock: 0, isAvailable: false }
+    const match = branchStockList.find((b) => b.sucursal_id?.toString() === sucursalId.toString())
+    if (match) {
+      const isAvail = (match.stock_status ?? true) && (match.stock > 0)
+      return { stock: match.stock ?? 0, isAvailable: isAvail }
+    }
+    // Si ya se cargaron los registros de stock por sucursal pero no existe para esta sucursal, es 0
+    if (branchStockList.length > 0) {
+      return { stock: 0, isAvailable: false }
+    }
+    const fallback = product?.stock ?? 0
+    return { stock: fallback, isAvailable: fallback > 0 }
+  }
+
   // Cargar sucursales activas de esta tienda estrictamente por store.id
   useEffect(() => {
     if (!isOpen || !store?.id) return
@@ -36,7 +52,6 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
 
         if (!error && data) {
           setSucursales(data)
-          // Si hay 1 sola sucursal, asignarla directamente; si hay más de 1, requerir selección si no se ha geolocalizado
           if (data.length === 1) {
             setSelectedSucursalId(data[0].id.toString())
           } else {
@@ -78,7 +93,7 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
     setComment('')
   }, [isOpen, product])
 
-  // Geolocalizar y asignar la sucursal más cercana
+  // Geolocalizar y asignar la sucursal más cercana CON STOCK
   const handleGeolocateBranch = () => {
     if (!navigator.geolocation) {
       toast.error('Tu navegador no soporta geolocalización.')
@@ -90,9 +105,12 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
         const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude }
         const sorted = sortBranchesByProximity(sucursales, coords)
         setSucursales(sorted)
-        if (sorted.length > 0) {
-          setSelectedSucursalId(sorted[0].id.toString())
-          toast.success(`📍 Asignada la sucursal más cercana: ${sorted[0].nombre}`)
+        const availableBranch = sorted.find((suc) => getBranchStockInfo(suc.id).isAvailable)
+        if (availableBranch) {
+          setSelectedSucursalId(availableBranch.id.toString())
+          toast.success(`📍 Asignada la sucursal más cercana con stock: ${availableBranch.nombre}`)
+        } else {
+          toast.error('Ninguna sucursal cercana tiene stock disponible de este producto.')
         }
         setGeoLoading(false)
       },
@@ -134,16 +152,14 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
     const city = suc.ciudad?.trim() || 'Ciudad Principal'
     if (!acc[city]) acc[city] = []
 
-    const stockItem = branchStockList.find((b) => b.sucursal_id === suc.id)
-    const stockQty = stockItem ? stockItem.stock : (product?.stock ?? 0)
-    const isAvailable = stockItem ? stockItem.stock_status : (stockQty > 0)
+    const stockInfo = getBranchStockInfo(suc.id)
 
     acc[city].push({
       id: suc.id,
       nombre: suc.nombre,
       direccion: suc.direccion,
-      stock: stockQty,
-      isAvailable,
+      stock: stockInfo.stock,
+      isAvailable: stockInfo.isAvailable,
     })
 
     return acc
@@ -238,6 +254,12 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
       ? val.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       : '0.00'
 
+  const targetBranchId = selectedSucursalId || (sucursales.length === 1 ? sucursales[0]?.id : null)
+  const selectedBranchStockInfo = targetBranchId ? getBranchStockInfo(targetBranchId) : null
+  const isSelectedBranchOutOfStock = targetBranchId
+    ? (!selectedBranchStockInfo?.isAvailable || (selectedBranchStockInfo?.stock ?? 0) < quantity)
+    : false
+
   const handleAddToCart = () => {
     if (isMissingRequiredSelections() || isOutOfStock) return
 
@@ -246,10 +268,18 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
       return
     }
 
+    if (targetBranchId) {
+      const stockInfo = getBranchStockInfo(targetBranchId)
+      if (!stockInfo.isAvailable || stockInfo.stock < quantity) {
+        toast.error('La sucursal seleccionada no tiene stock disponible para este producto.')
+        return
+      }
+    }
+
     const productData = {
       id: product.id,
       name: product.name,
-      stock: product.stock,
+      stock: selectedBranchStockInfo?.stock ?? product.stock,
       price: unitPriceUSD,
       compare_price: unitComparePriceUSD,
       price_bs: unitPriceBS,
@@ -442,7 +472,9 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
                             {sucursales.length > 1 ? (
                               <div className={`relative rounded-xl transition-all ${!selectedSucursalId
                                 ? 'border-2 border-amber-400 bg-amber-50/80 text-amber-900 animate-pulse-border-amber'
-                                : 'border border-gray-200 bg-white text-gray-800'
+                                : isSelectedBranchOutOfStock
+                                  ? 'border-2 border-rose-300 bg-rose-50 text-rose-900'
+                                  : 'border border-gray-200 bg-white text-gray-800'
                                 }`}>
                                 <select
                                   value={selectedSucursalId}
@@ -453,21 +485,41 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
                                   className="w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold outline-none bg-transparent cursor-pointer focus:ring-2 focus:ring-primary"
                                 >
                                   <option value="" className="bg-white text-gray-800">-- Selecciona una Sucursal --</option>
-                                  {sucursales.map((suc) => (
-                                    <option key={suc.id} value={suc.id} className="bg-white text-gray-800">
-                                      {suc.nombre} ({suc.direccion || suc.ciudad || 'Sede'})
-                                      {suc.distanceKm != null ? ` - a ${suc.distanceKm.toFixed(1)} km` : ''}
-                                    </option>
-                                  ))}
+                                  {sucursales.map((suc) => {
+                                    const stockInfo = getBranchStockInfo(suc.id)
+                                    const isOut = !stockInfo.isAvailable || stockInfo.stock <= 0
+                                    return (
+                                      <option
+                                        key={suc.id}
+                                        value={suc.id}
+                                        disabled={isOut}
+                                        className={isOut ? "bg-gray-100 text-gray-400 font-normal" : "bg-white text-gray-800 font-semibold"}
+                                      >
+                                        {suc.nombre} ({suc.direccion || suc.ciudad || 'Sede'})
+                                        {isOut ? ' — ⚠️ Sin Stock' : (suc.distanceKm != null ? ` - a ${suc.distanceKm.toFixed(1)} km` : '')}
+                                      </option>
+                                    )
+                                  })}
                                 </select>
                               </div>
                             ) : (
-                              <div className="bg-primary-light/40 border border-primary-light rounded-xl p-2.5 text-xs text-primary-dark font-medium flex items-center gap-2">
-                                <Building2 className="w-4 h-4 text-primary shrink-0" />
-                                <span>
-                                  <strong>{sucursales[0].nombre}</strong>
-                                  {sucursales[0].direccion ? ` - ${sucursales[0].direccion}` : ''}
-                                </span>
+                              <div className={`rounded-xl p-2.5 text-xs font-medium flex items-center justify-between gap-2 border ${
+                                isSelectedBranchOutOfStock
+                                  ? 'bg-rose-50 border-rose-200 text-rose-700'
+                                  : 'bg-primary-light/40 border-primary-light text-primary-dark'
+                              }`}>
+                                <div className="flex items-center gap-2">
+                                  <Building2 className={`w-4 h-4 shrink-0 ${isSelectedBranchOutOfStock ? 'text-rose-500' : 'text-primary'}`} />
+                                  <span>
+                                    <strong>{sucursales[0]?.nombre}</strong>
+                                    {sucursales[0]?.direccion ? ` - ${sucursales[0].direccion}` : ''}
+                                  </span>
+                                </div>
+                                {isSelectedBranchOutOfStock && (
+                                  <span className="text-[10px] uppercase font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded shrink-0">
+                                    Sin Stock
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
@@ -492,7 +544,7 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
                             </span>
                             <button
                               type="button"
-                              disabled={quantity >= (product.stock || 99)}
+                              disabled={quantity >= (selectedBranchStockInfo?.stock || product.stock || 99)}
                               onClick={() => setQuantity(q => q + 1)}
                               className="p-2 text-gray-600 hover:bg-gray-200 disabled:opacity-30 transition-colors"
                             >
@@ -504,21 +556,24 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
                         {/* Botón Agregar al Carrito */}
                         <button
                           type="button"
-                          disabled={isOutOfStock || isMissingRequiredSelections() || (sucursales.length > 1 && !selectedSucursalId)}
+                          disabled={isOutOfStock || isMissingRequiredSelections() || (sucursales.length > 1 && !selectedSucursalId) || isSelectedBranchOutOfStock}
                           onClick={handleAddToCart}
-                          className={`w-full py-3.5 rounded-full font-bold text-sm transition-all duration-200 shadow-md flex items-center justify-center gap-2 active:scale-95 ${isOutOfStock || isMissingRequiredSelections() || (sucursales.length > 1 && !selectedSucursalId)
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
-                            : 'bg-primary hover:bg-primary-dark text-white shadow-primary-light'
-                            }`}
+                          className={`w-full py-3.5 rounded-full font-bold text-sm transition-all duration-200 shadow-md flex items-center justify-center gap-2 active:scale-95 ${
+                            isOutOfStock || isMissingRequiredSelections() || (sucursales.length > 1 && !selectedSucursalId) || isSelectedBranchOutOfStock
+                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
+                              : 'bg-primary hover:bg-primary-dark text-white shadow-primary-light'
+                          }`}
                         >
                           <ShoppingBag className="w-5 h-5" />
                           {isOutOfStock
                             ? 'Producto Agotado'
-                            : isMissingRequiredSelections()
-                              ? 'Selecciona opciones requeridas'
-                              : (sucursales.length > 1 && !selectedSucursalId)
-                                ? 'Selecciona una Sucursal'
-                                : `Agregar al Carrito • ${formatPrice(activeUnitPrice * quantity)} ${symbol}`}
+                            : isSelectedBranchOutOfStock
+                              ? 'Sin Stock en esta Sucursal'
+                              : isMissingRequiredSelections()
+                                ? 'Selecciona opciones requeridas'
+                                : (sucursales.length > 1 && !selectedSucursalId)
+                                  ? 'Selecciona una Sucursal'
+                                  : `Agregar al Carrito • ${formatPrice(activeUnitPrice * quantity)} ${symbol}`}
                         </button>
                       </div>
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { Plus, Trash2, Edit3, X, Loader2, Image as ImageIcon, Building2, Star, Link as LinkIcon, Check, Download, Upload, FileSpreadsheet } from 'lucide-react'
+import { Plus, Trash2, Edit3, X, Loader2, Image as ImageIcon, Building2, Star, Link as LinkIcon, Check, Download, Upload, FileSpreadsheet, Car, Wrench, Layers, Tag, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '../utils/supabase'
 import { useCurrency } from '../context/CurrencyContext'
 import toast from 'react-hot-toast'
@@ -45,7 +45,7 @@ export default function ProductsManager() {
     }
   }
 
-  // Form fields
+  // Form fields base
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugAutoModified, setSlugAutoModified] = useState(false)
@@ -57,6 +57,39 @@ export default function ProductsManager() {
   const [description, setDescription] = useState('')
   const [isActive, setIsActive] = useState(true)
   
+  // Campos automotrices y lubricantes
+  const [oemNumber, setOemNumber] = useState('')
+  const [partNumberFabricante, setPartNumberFabricante] = useState('')
+  const [viscosidad, setViscosidad] = useState('')
+  const [tipoAceite, setTipoAceite] = useState('')
+  const [normativaApiJaso, setNormativaApiJaso] = useState('')
+  const [volumenPresentacion, setVolumenPresentacion] = useState('')
+  const [origenFabricacion, setOrigenFabricacion] = useState('')
+
+  // Compatibilidades y referencias cruzadas
+  const [compatibilitiesList, setCompatibilitiesList] = useState([])
+  const [crossReferencesList, setCrossReferencesList] = useState([])
+
+  // Listas desplegables para agregar compatibilidad
+  const [vehicleMarcas, setVehicleMarcas] = useState([])
+  const [vehicleModelos, setVehicleModelos] = useState([])
+  const [vehicleGeneraciones, setVehicleGeneraciones] = useState([])
+
+  // Campos formulario compatibilidad
+  const [compMarcaId, setCompMarcaId] = useState('')
+  const [compModeloId, setCompModeloId] = useState('')
+  const [compGeneracionId, setCompGeneracionId] = useState('')
+  const [compAnioInicio, setCompAnioInicio] = useState('2008')
+  const [compAnioFin, setCompAnioFin] = useState('2099')
+  const [compEsPresente, setCompEsPresente] = useState(true)
+  const [compMotor, setCompMotor] = useState('')
+  const [compPosicion, setCompPosicion] = useState('')
+  const [compNotas, setCompNotas] = useState('')
+
+  // Campos formulario referencia cruzada
+  const [refCodigo, setRefCodigo] = useState('')
+  const [refMarca, setRefMarca] = useState('')
+
   // Lista de Imágenes { id?: string, url: string, is_primary: boolean, file?: File }
   const [imageList, setImageList] = useState([])
   const [newUrlInput, setNewUrlInput] = useState('')
@@ -98,20 +131,35 @@ export default function ProductsManager() {
       if (branchErr) throw branchErr
       setBranches(branchData || [])
 
-      // 3. Cargar productos
+      // 3. Cargar productos con relaciones automotrices
       const { data: prodData, error: prodError } = await supabase
         .from('producto')
         .select(`
           *,
           category:category!producto_category_fkey(id, name),
           ProductImagen(*),
-          producto_grupo_relacion(grupo_id)
+          producto_grupo_relacion(grupo_id),
+          producto_compatibilidad(*, vehiculo_modelo(*, vehiculo_marca(*)), vehiculo_generacion(*)),
+          producto_referencia_cruzada(*)
         `)
         .eq('store', store.id)
         .order('created_at', { ascending: false })
 
       if (prodError) throw prodError
       setProducts(prodData || [])
+
+      // 4. Cargar catálogos de vehículos para los desplegables de compatibilidad
+      const { data: vmData } = await supabase.from('vehiculo_marca').select('*').order('nombre')
+      setVehicleMarcas(vmData || [])
+
+      const { data: vmodData } = await supabase.from('vehiculo_modelo').select('*, vehiculo_marca(*)').order('nombre')
+      setVehicleModelos(vmodData || [])
+
+      const { data: vgenData } = await supabase
+        .from('vehiculo_generacion')
+        .select('*, vehiculo_modelo(*, vehiculo_marca(*))')
+        .order('id', { ascending: false })
+      setVehicleGeneraciones(vgenData || [])
 
       // 4. Cargar desglose de stock por sucursal
       const branchIds = (branchData || []).map(b => b.id)
@@ -199,6 +247,18 @@ export default function ProductsManager() {
     setBarcode('')
     setTax('0')
     setPrecioPorTamano(false)
+
+    // Reset campos automotrices
+    setOemNumber('')
+    setPartNumberFabricante('')
+    setViscosidad('')
+    setTipoAceite('')
+    setNormativaApiJaso('')
+    setVolumenPresentacion('')
+    setOrigenFabricacion('')
+    setCompatibilitiesList([])
+    setCrossReferencesList([])
+
     setModalOpen(true)
   }
 
@@ -228,6 +288,27 @@ export default function ProductsManager() {
     setPrecioPorTamano(product.precio_por_tamano || false)
     setSelectedGroupIds(product.producto_grupo_relacion?.map(rel => rel.grupo_id) || [])
 
+    // Cargar campos automotrices
+    setOemNumber(product.oem_number || '')
+    setPartNumberFabricante(product.part_number_fabricante || '')
+    setViscosidad(product.viscosidad || '')
+    setTipoAceite(product.tipo_aceite || '')
+    setNormativaApiJaso(product.normativa_api_jaso || '')
+    setVolumenPresentacion(product.volumen_presentacion || '')
+    setOrigenFabricacion(product.origen_fabricacion || '')
+
+    // Cargar compatibilidades existentes
+    const existingComp = (product.producto_compatibilidad || []).map(c => ({
+      ...c,
+      marcaNombre: c.vehiculo_modelo?.vehiculo_marca?.nombre || 'Marca',
+      modeloNombre: c.vehiculo_modelo?.nombre || 'Modelo',
+      generacionNombre: c.vehiculo_generacion?.nombre || ''
+    }))
+    setCompatibilitiesList(existingComp)
+
+    // Cargar referencias cruzadas existentes
+    setCrossReferencesList(product.producto_referencia_cruzada || [])
+
     // Cargar imágenes existentes
     const existingImages = (product.ProductImagen || []).map(img => ({
       id: img.id,
@@ -235,7 +316,6 @@ export default function ProductsManager() {
       is_primary: img.is_primary
     }))
 
-    // Asegurar que al menos una sea principal si existen imágenes
     if (existingImages.length > 0 && !existingImages.some(img => img.is_primary)) {
       existingImages[0].is_primary = true
     }
@@ -243,6 +323,57 @@ export default function ProductsManager() {
     setImageList(existingImages)
     setNewUrlInput('')
     setModalOpen(true)
+  }
+
+  // Funciones auxiliares para agregar compatibilidad y referencias en cliente
+  const handleAddCompatibility = () => {
+    if (!compModeloId) {
+      toast.error('Debes seleccionar un modelo de vehículo.')
+      return
+    }
+    const targetModelo = vehicleModelos.find(m => m.id.toString() === compModeloId.toString())
+    const targetGeneracion = vehicleGeneraciones.find(g => g.id.toString() === compGeneracionId.toString())
+
+    const newComp = {
+      modelo_id: parseInt(compModeloId),
+      generacion_id: compGeneracionId ? parseInt(compGeneracionId) : null,
+      anio_inicio: parseInt(compAnioInicio) || 2008,
+      anio_fin: compEsPresente ? 2099 : (parseInt(compAnioFin) || 2099),
+      motor: compMotor.trim(),
+      posicion: compPosicion.trim(),
+      notas: compNotas.trim(),
+      modeloNombre: targetModelo ? targetModelo.nombre : 'Modelo',
+      marcaNombre: targetModelo?.vehiculo_marca ? targetModelo.vehiculo_marca.nombre : 'Marca',
+      generacionNombre: targetGeneracion ? targetGeneracion.nombre : ''
+    }
+
+    setCompatibilitiesList(prev => [...prev, newComp])
+    setCompMotor('')
+    setCompPosicion('')
+    setCompNotas('')
+    toast.success('Compatibilidad añadida a la lista.')
+  }
+
+  const handleRemoveCompatibility = (index) => {
+    setCompatibilitiesList(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const handleAddCrossReference = () => {
+    if (!refCodigo.trim()) {
+      toast.error('El código de referencia es obligatorio.')
+      return
+    }
+    setCrossReferencesList(prev => [...prev, {
+      codigo_referencia: refCodigo.trim().toUpperCase(),
+      marca_referencia: refMarca.trim()
+    }])
+    setRefCodigo('')
+    setRefMarca('')
+    toast.success('Referencia cruzada añadida.')
+  }
+
+  const handleRemoveCrossReference = (index) => {
+    setCrossReferencesList(prev => prev.filter((_, i) => i !== index))
   }
 
   // Manejador de selección múltiple de archivos de imagen
@@ -352,7 +483,14 @@ export default function ProductsManager() {
         is_active: isActive,
         barcode: barcode.trim() || null,
         tax: parseFloat(tax) || 0,
-        precio_por_tamano: precioPorTamano
+        precio_por_tamano: precioPorTamano,
+        oem_number: oemNumber.trim() || null,
+        part_number_fabricante: partNumberFabricante.trim() || null,
+        viscosidad: viscosidad.trim() || null,
+        tipo_aceite: tipoAceite.trim() || null,
+        normativa_api_jaso: normativaApiJaso.trim() || null,
+        volumen_presentacion: volumenPresentacion.trim() || null,
+        origen_fabricacion: origenFabricacion.trim() || null
       }
 
       let productId
@@ -478,6 +616,35 @@ export default function ProductsManager() {
           .insert(relationsPayload)
 
         if (relInsertError) console.error('Error al insertar relaciones de grupos:', relInsertError)
+      }
+
+      // 5. Guardar Compatibilidades (producto_compatibilidad)
+      await supabase.from('producto_compatibilidad').delete().eq('producto_id', productId)
+      if (compatibilitiesList.length > 0) {
+        const compPayload = compatibilitiesList.map(c => ({
+          producto_id: productId,
+          modelo_id: c.modelo_id,
+          generacion_id: c.generacion_id || null,
+          anio_inicio: parseInt(c.anio_inicio) || 2008,
+          anio_fin: c.anio_fin ? parseInt(c.anio_fin) : 2099,
+          motor: c.motor ? c.motor.trim() : null,
+          posicion: c.posicion ? c.posicion.trim() : null,
+          notas: c.notas ? c.notas.trim() : null
+        }))
+        const { error: compErr } = await supabase.from('producto_compatibilidad').insert(compPayload)
+        if (compErr) console.error('Error al guardar compatibilidades:', compErr)
+      }
+
+      // 6. Guardar Referencias Cruzadas (producto_referencia_cruzada)
+      await supabase.from('producto_referencia_cruzada').delete().eq('producto_id', productId)
+      if (crossReferencesList.length > 0) {
+        const refPayload = crossReferencesList.map(r => ({
+          producto_id: productId,
+          codigo_referencia: r.codigo_referencia.trim().toUpperCase(),
+          marca_referencia: r.marca_referencia ? r.marca_referencia.trim() : null
+        }))
+        const { error: refErr } = await supabase.from('producto_referencia_cruzada').insert(refPayload)
+        if (refErr) console.error('Error al guardar referencias cruzadas:', refErr)
       }
 
       toast.success(editingProduct ? 'Producto actualizado correctamente.' : 'Producto creado con éxito.')
@@ -634,9 +801,24 @@ export default function ProductsManager() {
                           </div>
                           <div>
                             <span className="font-semibold text-zinc-900 block leading-tight">{product.name}</span>
-                            <div className="flex items-center gap-2 mt-0.5">
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
                               {product.sku && <span className="text-[10px] text-zinc-400 font-mono">SKU: {product.sku}</span>}
-                              {product.slug && <span className="text-[10px] text-zinc-400 font-mono">/{product.slug}</span>}
+                              {product.oem_number && (
+                                <span className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-mono font-bold">
+                                  OEM: {product.oem_number}
+                                </span>
+                              )}
+                              {product.viscosidad && (
+                                <span className="text-[10px] text-blue-800 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-bold">
+                                  {product.viscosidad}
+                                </span>
+                              )}
+                              {product.producto_compatibilidad?.length > 0 && (
+                                <span className="text-[10px] text-zinc-700 bg-zinc-100 border border-zinc-200 px-1.5 py-0.5 rounded flex items-center gap-0.5 font-medium">
+                                  <Car className="w-3 h-3 text-zinc-500" />
+                                  {product.producto_compatibilidad.length} veh.
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -882,6 +1064,361 @@ export default function ProductsManager() {
                     className="w-full px-4 py-3 rounded-xl border border-zinc-200 focus:ring-2 focus:ring-zinc-950 outline-none text-sm transition-all font-mono"
                   />
                 </div>
+              </div>
+
+              {/* SECCIÓN 1: ESPECIFICACIONES AUTOMOTRICES Y LUBRICANTES */}
+              <div className="space-y-3 border-t border-zinc-100 pt-4 bg-zinc-50/50 p-4 border border-zinc-200/80 rounded-xl">
+                <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 flex items-center gap-1.5">
+                  <Wrench className="w-4 h-4 text-zinc-600" />
+                  Especificaciones Automotrices y Lubricantes
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 uppercase">Número de Parte OEM</label>
+                    <input
+                      type="text"
+                      value={oemNumber}
+                      onChange={(e) => setOemNumber(e.target.value)}
+                      placeholder="Ej. 90915-YZZE1"
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-200 outline-none text-xs font-mono font-bold bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 uppercase">Código del Fabricante</label>
+                    <input
+                      type="text"
+                      value={partNumberFabricante}
+                      onChange={(e) => setPartNumberFabricante(e.target.value)}
+                      placeholder="Ej. PH4967 / W67-1"
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-200 outline-none text-xs font-mono font-bold bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 uppercase">Viscosidad (Aceites)</label>
+                    <input
+                      type="text"
+                      value={viscosidad}
+                      onChange={(e) => setViscosidad(e.target.value)}
+                      placeholder="Ej. 20W-50, 10W-30, 5W-30"
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-200 outline-none text-xs font-semibold bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 uppercase">Tipo de Aceite / Base</label>
+                    <select
+                      value={tipoAceite}
+                      onChange={(e) => setTipoAceite(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-200 outline-none text-xs font-semibold bg-white"
+                    >
+                      <option value="">-- Seleccionar --</option>
+                      <option value="Mineral">Mineral</option>
+                      <option value="Semicintético">Semicintético</option>
+                      <option value="100% Sintético">100% Sintético</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 uppercase">Normativa (API / JASO)</label>
+                    <input
+                      type="text"
+                      value={normativaApiJaso}
+                      onChange={(e) => setNormativaApiJaso(e.target.value)}
+                      placeholder="Ej. API SP / JASO MA2"
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-200 outline-none text-xs font-semibold bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 uppercase">Presentación / Volumen</label>
+                    <input
+                      type="text"
+                      value={volumenPresentacion}
+                      onChange={(e) => setVolumenPresentacion(e.target.value)}
+                      placeholder="Ej. 1 Litro (Cuarto), Galón"
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-200 outline-none text-xs font-semibold bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-zinc-500 uppercase">Origen de Fabricación</label>
+                    <input
+                      type="text"
+                      value={origenFabricacion}
+                      onChange={(e) => setOrigenFabricacion(e.target.value)}
+                      placeholder="Ej. Japón, EEUU, Alemania"
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-200 outline-none text-xs font-semibold bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECCIÓN 2: COMPATIBILIDAD DE VEHÍCULOS (FITMENT / YMM) */}
+              <div className="space-y-3 border-t border-zinc-100 pt-4 bg-zinc-50/50 p-4 border border-zinc-200/80 rounded-xl">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 flex items-center gap-1.5">
+                    <Car className="w-4 h-4 text-zinc-600" />
+                    Compatibilidad de Vehículos ({compatibilitiesList.length})
+                  </label>
+                </div>
+
+                {/* Formulario rápido para asociar un vehículo registrado */}
+                <div className="bg-white p-3 border border-zinc-200 rounded-xl space-y-3">
+                  
+                  {/* Selector directo de Vehículo / Generación Registrada */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold uppercase text-zinc-600 block">
+                      🚗 Seleccionar Vehículo / Generación Registrada *
+                    </label>
+                    <select
+                      value={compGeneracionId}
+                      onChange={(e) => {
+                        const genId = e.target.value
+                        setCompGeneracionId(genId)
+                        if (genId) {
+                          const targetGen = vehicleGeneraciones.find(g => g.id.toString() === genId.toString())
+                          if (targetGen) {
+                            setCompModeloId(targetGen.modelo_id.toString())
+                            if (targetGen.vehiculo_modelo?.marca_id) {
+                              setCompMarcaId(targetGen.vehiculo_modelo.marca_id.toString())
+                            }
+                            setCompAnioInicio(targetGen.anio_inicio)
+                            setCompAnioFin(targetGen.anio_fin)
+                            setCompEsPresente(targetGen.anio_fin === 2099)
+                            setCompMotor(targetGen.motor || '')
+                          }
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-200 text-xs font-semibold bg-zinc-50 focus:bg-white focus:ring-2 focus:ring-zinc-950 outline-none"
+                    >
+                      <option value="">-- Seleccionar un vehículo ya creado --</option>
+                      {vehicleGeneraciones.map(g => (
+                        <option key={g.id} value={g.id}>
+                          {g.vehiculo_modelo?.vehiculo_marca?.nombre} {g.vehiculo_modelo?.nombre} — {g.nombre} ({g.anio_inicio} - {g.anio_fin === 2099 ? 'Presente' : g.anio_fin}) {g.motor ? `| Motor: ${g.motor}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* O alternativa: Filtrar por Marca ➔ Modelo ➔ Generación */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-zinc-100">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-zinc-400">Filtrar por Marca</label>
+                      <select
+                        value={compMarcaId}
+                        onChange={(e) => {
+                          setCompMarcaId(e.target.value)
+                          setCompModeloId('')
+                          setCompGeneracionId('')
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-200 text-xs font-semibold bg-zinc-50 outline-none"
+                      >
+                        <option value="">-- Marca --</option>
+                        {vehicleMarcas.map(m => (
+                          <option key={m.id} value={m.id}>{m.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-zinc-400">Filtrar por Modelo</label>
+                      <select
+                        value={compModeloId}
+                        onChange={(e) => {
+                          setCompModeloId(e.target.value)
+                          setCompGeneracionId('')
+                        }}
+                        disabled={!compMarcaId}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-200 text-xs font-semibold bg-zinc-50 outline-none disabled:opacity-50"
+                      >
+                        <option value="">-- Modelo --</option>
+                        {vehicleModelos
+                          .filter(m => !compMarcaId || m.marca_id.toString() === compMarcaId.toString())
+                          .map(m => (
+                            <option key={m.id} value={m.id}>{m.nombre}</option>
+                          ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-zinc-400">Generación</label>
+                      <select
+                        value={compGeneracionId}
+                        onChange={(e) => {
+                          const genId = e.target.value
+                          setCompGeneracionId(genId)
+                          if (genId) {
+                            const targetGen = vehicleGeneraciones.find(g => g.id.toString() === genId.toString())
+                            if (targetGen) {
+                              setCompAnioInicio(targetGen.anio_inicio)
+                              setCompAnioFin(targetGen.anio_fin)
+                              setCompEsPresente(targetGen.anio_fin === 2099)
+                              setCompMotor(targetGen.motor || '')
+                            }
+                          }
+                        }}
+                        disabled={!compModeloId}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-200 text-xs font-semibold bg-zinc-50 outline-none disabled:opacity-50"
+                      >
+                        <option value="">-- Generación / Versión --</option>
+                        {vehicleGeneraciones
+                          .filter(g => g.modelo_id.toString() === compModeloId.toString())
+                          .map(g => (
+                            <option key={g.id} value={g.id}>{g.nombre} ({g.anio_inicio}-{g.anio_fin === 2099 ? 'Pres' : g.anio_fin})</option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Datos del vehículo seleccionado */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-zinc-100">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-zinc-400">Año Inicio</label>
+                      <input
+                        type="number"
+                        value={compAnioInicio}
+                        onChange={(e) => setCompAnioInicio(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-200 text-xs font-mono font-bold outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-zinc-400">Año Fin</label>
+                      <input
+                        type="number"
+                        disabled={compEsPresente}
+                        value={compEsPresente ? '' : compAnioFin}
+                        onChange={(e) => setCompAnioFin(e.target.value)}
+                        placeholder={compEsPresente ? 'Presente' : '2014'}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-200 text-xs font-mono font-bold outline-none disabled:bg-zinc-100 disabled:text-zinc-400"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-zinc-400">Motor</label>
+                      <input
+                        type="text"
+                        value={compMotor}
+                        onChange={(e) => setCompMotor(e.target.value)}
+                        placeholder="Ej. 1.6L Zetec"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-200 text-xs font-semibold outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-zinc-400">Posición (Opcional)</label>
+                      <input
+                        type="text"
+                        value={compPosicion}
+                        onChange={(e) => setCompPosicion(e.target.value)}
+                        placeholder="Ej. Delantero"
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-200 text-xs font-semibold outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        id="comp-presente-check"
+                        checked={compEsPresente}
+                        onChange={(e) => setCompEsPresente(e.target.checked)}
+                        className="rounded border-zinc-300 text-zinc-950 focus:ring-zinc-900"
+                      />
+                      <label htmlFor="comp-presente-check" className="text-[11px] font-semibold text-zinc-700 cursor-pointer">
+                        Hasta la actualidad (Presente)
+                      </label>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddCompatibility}
+                      className="px-4 py-2 bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl transition-all flex items-center gap-1.5 shadow-sm active:scale-95"
+                    >
+                      <Plus className="w-4 h-4" /> Relacionar Vehículo
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lista de compatibilidades agregadas */}
+                {compatibilitiesList.length > 0 && (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {compatibilitiesList.map((comp, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-white border border-zinc-200 px-3 py-2 rounded-xl text-xs">
+                        <div className="flex items-center gap-2">
+                          <Car className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span className="font-bold text-zinc-900">{comp.marcaNombre} {comp.modeloNombre}</span>
+                          <span className="font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px]">
+                            {comp.anio_inicio} - {comp.anio_fin === 2099 ? 'Presente' : comp.anio_fin}
+                          </span>
+                          {comp.motor && <span className="text-[10px] text-zinc-500">Motor: {comp.motor}</span>}
+                          {comp.posicion && <span className="text-[10px] text-zinc-500">({comp.posicion})</span>}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCompatibility(idx)}
+                          className="text-rose-500 hover:text-rose-700 p-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* SECCIÓN 3: REFERENCIAS CRUZADAS / EQUIVALENCIAS OEM */}
+              <div className="space-y-3 border-t border-zinc-100 pt-4 bg-zinc-50/50 p-4 border border-zinc-200/80 rounded-xl">
+                <label className="text-xs font-bold uppercase tracking-wider text-zinc-700 flex items-center gap-1.5">
+                  <Tag className="w-4 h-4 text-zinc-600" />
+                  Referencias Cruzadas / Equivalencias OEM ({crossReferencesList.length})
+                </label>
+
+                <div className="flex gap-2 bg-white p-2.5 border border-zinc-200 rounded-xl">
+                  <input
+                    type="text"
+                    value={refCodigo}
+                    onChange={(e) => setRefCodigo(e.target.value)}
+                    placeholder="Código Referencia (Ej. PH4967)"
+                    className="flex-1 px-3 py-1.5 border border-zinc-200 rounded-lg text-xs font-mono font-bold uppercase outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={refMarca}
+                    onChange={(e) => setRefMarca(e.target.value)}
+                    placeholder="Marca Equivalente (Ej. FRAM)"
+                    className="flex-1 px-3 py-1.5 border border-zinc-200 rounded-lg text-xs font-semibold outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCrossReference}
+                    className="px-3 py-1.5 bg-zinc-900 text-white text-xs font-semibold rounded-lg hover:bg-zinc-800 transition-colors shrink-0 flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Añadir
+                  </button>
+                </div>
+
+                {crossReferencesList.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {crossReferencesList.map((ref, idx) => (
+                      <span key={idx} className="inline-flex items-center gap-1.5 bg-white border border-zinc-200 px-2.5 py-1 rounded-lg text-xs font-mono font-semibold text-zinc-800 shadow-xs">
+                        <span className="font-bold text-zinc-950">{ref.codigo_referencia}</span>
+                        {ref.marca_referencia && <span className="text-[10px] text-zinc-400">({ref.marca_referencia})</span>}
+                        <button type="button" onClick={() => handleRemoveCrossReference(idx)} className="text-zinc-400 hover:text-rose-500 ml-1">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* SECCIÓN MULTI-IMÁGENES */}

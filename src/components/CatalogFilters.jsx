@@ -1,6 +1,7 @@
 import React, { Fragment, useState, useEffect } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
 import { X, Tag, Percent, DollarSign, PackageCheck, SlidersHorizontal, RotateCcw } from 'lucide-react'
+import HierarchicalVehicleTree from './HierarchicalVehicleTree'
 
 const CatalogFilters = ({
   isOpen,
@@ -44,6 +45,7 @@ const CatalogFilters = ({
       priceMin: '',
       priceMax: '',
       inStockOnly: false,
+      vehicle: { marcaId: '', modeloId: '', generacionId: '' },
     }
     setLocal(cleared)
     onFiltersChange(cleared)
@@ -96,7 +98,15 @@ const CatalogFilters = ({
 
                     {/* Cuerpo del Drawer (Scrollable) */}
                     <div className="flex-1 overflow-y-auto px-6 py-6 space-y-7">
-                      {/* Categorías */}
+                      
+                      {/* 🚗 FILTRO DE VEHÍCULO JERÁRQUICO (DE PRIMERO) */}
+                      <div>
+                        <HierarchicalVehicleTree
+                          vehicleFilter={local.vehicle || { marcaId: '', modeloId: '', generacionId: '' }}
+                          onChange={(newVeh) => setLocal(prev => ({ ...prev, vehicle: newVeh }))}
+                          onClear={() => setLocal(prev => ({ ...prev, vehicle: { marcaId: '', modeloId: '', generacionId: '' } }))}
+                        />
+                      </div>
                       <div>
                         <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-primary-dark mb-3.5">
                           <Tag className="w-4 h-4 text-primary" />

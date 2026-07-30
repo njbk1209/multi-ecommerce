@@ -78,7 +78,14 @@ export default function CSVImportModal({ isOpen, onClose, existingProducts, bran
           price: row.price,
           tax: row.tax,
           stock: row.totalStockSum,
-          stock_status: row.totalStockSum >= 1
+          stock_status: row.totalStockSum >= 1,
+          oem_number: row.oem_number ? row.oem_number.trim() : null,
+          part_number_fabricante: row.part_number_fabricante ? row.part_number_fabricante.trim() : null,
+          viscosidad: row.viscosidad ? row.viscosidad.trim() : null,
+          tipo_aceite: row.tipo_aceite ? row.tipo_aceite.trim() : null,
+          normativa_api_jaso: row.normativa_api_jaso ? row.normativa_api_jaso.trim() : null,
+          volumen_presentacion: row.volumen_presentacion ? row.volumen_presentacion.trim() : null,
+          origen_fabricacion: row.origen_fabricacion ? row.origen_fabricacion.trim() : null
         }
 
         const { error: prodErr } = await supabase

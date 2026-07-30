@@ -56,17 +56,19 @@ const BranchInventoryManager = () => {
       setProducts(prodData || []);
 
       // 3. Cargar stock por sucursal
+      let inventoryData = [];
       const branchIds = (branchData || []).map((b) => b.id);
       if (branchIds.length > 0) {
-        const { data: inventoryData, error: invErr } = await supabase
+        const { data: invData, error: invErr } = await supabase
           .from("producto_stock_sucursal")
           .select("*")
           .in("sucursal_id", branchIds);
 
         if (invErr) throw invErr;
+        inventoryData = invData || [];
 
         const map = {};
-        (inventoryData || []).forEach((item) => {
+        inventoryData.forEach((item) => {
           map[`${item.producto_id}_${item.sucursal_id}`] = {
             id: item.id,
             stock: item.stock,
@@ -77,10 +79,33 @@ const BranchInventoryManager = () => {
         setStockMap(map);
       }
 
+      // 4. Auto-sincronizar stock total y stock_status en la tabla `producto`
+      if (prodData && prodData.length > 0) {
+        const prodStockSumMap = {};
+        inventoryData.forEach(item => {
+          prodStockSumMap[item.producto_id] = (prodStockSumMap[item.producto_id] || 0) + (item.stock || 0);
+        });
+
+        for (const p of prodData) {
+          const calculatedTotal = prodStockSumMap[p.id] || 0;
+          const calculatedStatus = calculatedTotal >= 1;
+
+          if (p.stock !== calculatedTotal || p.stock_status !== calculatedStatus) {
+            await supabase
+              .from("producto")
+              .update({
+                stock: calculatedTotal,
+                stock_status: calculatedStatus
+              })
+              .eq("id", p.id);
+          }
+        }
+      }
+
       setEditedItems({});
 
       if (showToast) {
-        toast.success("Inventarios actualizados", {
+        toast.success("Inventarios y disponibilidad web sincronizados", {
           icon: "📦",
           style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
         });
@@ -113,6 +138,12 @@ const BranchInventoryManager = () => {
       [field]: value,
     };
 
+    // Auto-actualizar stock_status si cambia la cantidad de stock
+    if (field === 'stock') {
+      const numVal = parseInt(value) || 0;
+      updated.stock_status = numVal >= 1;
+    }
+
     setEditedItems((prev) => ({
       ...prev,
       [key]: updated,
@@ -134,12 +165,13 @@ const BranchInventoryManager = () => {
       const recordsToUpsert = keysToSave.map((key) => {
         const [producto_id, sucursal_id] = key.split("_");
         const item = editedItems[key];
+        const stockNum = parseInt(item.stock) || 0;
         return {
           producto_id: parseInt(producto_id),
           sucursal_id: parseInt(sucursal_id),
-          stock: parseInt(item.stock) || 0,
+          stock: stockNum,
           stock_minimo: parseInt(item.stock_minimo) || 0,
-          stock_status: item.stock_status ?? true,
+          stock_status: stockNum >= 1,
           updated_at: new Date().toISOString(),
         };
       });
@@ -150,7 +182,30 @@ const BranchInventoryManager = () => {
 
       if (error) throw error;
 
-      toast.success(`${recordsToUpsert.length} registro(s) de inventario actualizados.`, {
+      // Actualizar el acumulado en la tabla producto
+      const affectedProductIds = [...new Set(keysToSave.map((key) => parseInt(key.split("_")[0])))];
+
+      for (const prodId of affectedProductIds) {
+        const { data: allBranchStock } = await supabase
+          .from("producto_stock_sucursal")
+          .select("stock")
+          .eq("producto_id", prodId);
+
+        const totalStockSum = (allBranchStock || []).reduce(
+          (sum, b) => sum + (parseInt(b.stock) || 0),
+          0
+        );
+
+        await supabase
+          .from("producto")
+          .update({
+            stock: totalStockSum,
+            stock_status: totalStockSum >= 1
+          })
+          .eq("id", prodId);
+      }
+
+      toast.success(`${recordsToUpsert.length} registro(s) de inventario actualizados y sincronizados con la web.`, {
         icon: "✅",
         style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
       });

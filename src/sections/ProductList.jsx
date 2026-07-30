@@ -10,6 +10,7 @@ import { X } from "lucide-react";
 import { supabase } from "../utils/supabase";
 import { useCurrency } from "../context/CurrencyContext";
 import { buildCategoryTree } from "../components/CategoriesManager";
+import { parseYearTermsFromQuery, getProductIdsMatchingYears } from "../utils/yearSearch";
 
 const ITEMS_PER_PAGE = 16;
 
@@ -19,6 +20,7 @@ const DEFAULT_FILTERS = {
   priceMin: '',
   priceMax: '',
   inStockOnly: false,
+  vehicle: { marcaId: '', modeloId: '', generacionId: '' },
 };
 
 const ProductList = () => {
@@ -110,6 +112,7 @@ const ProductList = () => {
     if (filters.hasDiscount) count++;
     if (filters.priceMin || filters.priceMax) count++;
     if (filters.inStockOnly) count++;
+    if (filters.vehicle?.marcaId || filters.vehicle?.modeloId || filters.vehicle?.generacionId) count++;
     return count;
   }, [filters]);
 
@@ -139,14 +142,119 @@ const ProductList = () => {
           .eq("store", store.id)
           .eq("is_active", true);
 
+        // Vehicle fitment filter
+        const vehFilter = filters.vehicle;
+        if (vehFilter && (vehFilter.generacionId || vehFilter.modeloId || vehFilter.marcaId)) {
+          let compQuery = supabase.from("producto_compatibilidad").select("producto_id");
+
+          if (vehFilter.generacionId) {
+            compQuery = compQuery.eq("generacion_id", parseInt(vehFilter.generacionId));
+          } else if (vehFilter.modeloId) {
+            compQuery = compQuery.eq("modelo_id", parseInt(vehFilter.modeloId));
+          } else if (vehFilter.marcaId) {
+            const { data: marcaModelos } = await supabase
+              .from("vehiculo_modelo")
+              .select("id")
+              .eq("marca_id", parseInt(vehFilter.marcaId));
+
+            const modIds = (marcaModelos || []).map(m => m.id);
+            if (modIds.length > 0) {
+              compQuery = compQuery.in("modelo_id", modIds);
+            } else {
+              compQuery = null;
+            }
+          }
+
+          if (compQuery) {
+            const { data: compData } = await compQuery;
+            const compatibleProductIds = [...new Set((compData || []).map(c => c.producto_id))];
+
+            if (compatibleProductIds.length === 0) {
+              setProducts([]);
+              setTotalPages(1);
+              setLoading(false);
+              return;
+            }
+
+            query = query.in("id", compatibleProductIds);
+          } else {
+            setProducts([]);
+            setTotalPages(1);
+            setLoading(false);
+            return;
+          }
+        }
+
         // Category filter
         if (hasCategoryFilter) {
           query = query.in("category.name", targetCategoryNames);
         }
 
-        // Search filter (name + description)
-        if (searchQuery) {
-          query = query.or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+        // Search filter (Multi-term inteligente con rangos de años para repuestos y productos)
+        if (searchQuery && searchQuery.trim()) {
+          const { textTerms, yearNumbers } = parseYearTermsFromQuery(searchQuery);
+
+          // 1. Si hay términos de año (ej: 2003), obtener IDs de productos que coincidan por rango o por vehiculo_generacion
+          let yearMatchedProductIds = null;
+          if (yearNumbers.length > 0) {
+            yearMatchedProductIds = await getProductIdsMatchingYears(supabase, store.id, yearNumbers);
+            if (yearMatchedProductIds.length === 0) {
+              setProducts([]);
+              setTotalPages(1);
+              setLoading(false);
+              return;
+            }
+          }
+
+          // 2. Términos significativos para la búsqueda de texto
+          const termsToUse = textTerms.length > 0 ? textTerms : (yearNumbers.length > 0 ? [] : [searchQuery.trim()]);
+
+          // Obtener referencias cruzadas por término si existen
+          const crossRefMapByTerm = {};
+          if (termsToUse.length > 0) {
+            try {
+              const { data: refData } = await supabase
+                .from("producto_referencia_cruzada")
+                .select("producto_id, codigo_referencia");
+
+              if (refData && refData.length > 0) {
+                termsToUse.forEach(term => {
+                  const cleanT = term.toLowerCase().trim();
+                  if (!cleanT) return;
+                  const matchingIds = refData
+                    .filter(r => r.codigo_referencia && r.codigo_referencia.toLowerCase().includes(cleanT))
+                    .map(r => r.producto_id);
+                  if (matchingIds.length > 0) {
+                    crossRefMapByTerm[term] = [...new Set(matchingIds)];
+                  }
+                });
+              }
+            } catch (e) {
+              console.error("Error al buscar referencias cruzadas:", e);
+            }
+          }
+
+          // Aplicar cada término a la consulta. Cada término debe coincidir en alguno de los campos de texto O en referencia cruzada
+          if (termsToUse.length > 0) {
+            termsToUse.forEach(term => {
+              const cleanTerm = term.trim();
+              if (cleanTerm) {
+                let termCondition = `name.ilike.%${cleanTerm}%,description.ilike.%${cleanTerm}%,sku.ilike.%${cleanTerm}%,oem_number.ilike.%${cleanTerm}%,part_number_fabricante.ilike.%${cleanTerm}%`;
+                
+                const crossRefIds = crossRefMapByTerm[term];
+                if (crossRefIds && crossRefIds.length > 0) {
+                  termCondition += `,id.in.(${crossRefIds.join(",")})`;
+                }
+
+                query = query.or(termCondition);
+              }
+            });
+          }
+
+          // 3. Aplicar filtro por IDs coincidentes de año
+          if (yearMatchedProductIds && yearMatchedProductIds.length > 0) {
+            query = query.in("id", yearMatchedProductIds);
+          }
         }
 
         // Price range filters

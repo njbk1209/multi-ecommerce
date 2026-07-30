@@ -143,12 +143,37 @@ const BranchesManager = () => {
           .eq("store_id", store.id);
       }
 
+      // Preparar payload con tipos correctos (convertir latitud/longitud a float o null)
+      const cleanLat = formData.latitud !== "" && formData.latitud !== null && !isNaN(parseFloat(formData.latitud))
+        ? parseFloat(formData.latitud)
+        : null;
+      const cleanLng = formData.longitud !== "" && formData.longitud !== null && !isNaN(parseFloat(formData.longitud))
+        ? parseFloat(formData.longitud)
+        : null;
+
+      const payload = {
+        nombre: formData.nombre.trim(),
+        codigo: formData.codigo ? formData.codigo.trim() : null,
+        razon_social: formData.razon_social ? formData.razon_social.trim() : null,
+        identificacion_fiscal: formData.identificacion_fiscal ? formData.identificacion_fiscal.trim() : null,
+        direccion: formData.direccion ? formData.direccion.trim() : null,
+        ciudad: formData.ciudad ? formData.ciudad.trim() : null,
+        estado_provincia: formData.estado_provincia ? formData.estado_provincia.trim() : null,
+        codigo_postal: formData.codigo_postal ? formData.codigo_postal.trim() : null,
+        latitud: cleanLat,
+        longitud: cleanLng,
+        telefono: formData.telefono ? formData.telefono.trim() : null,
+        email_contacto: formData.email_contacto ? formData.email_contacto.trim() : null,
+        es_principal: !!formData.es_principal,
+        is_active: !!formData.is_active,
+      };
+
       if (editingBranch) {
         // Actualizar existente
         const { error } = await supabase
           .from("sucursal")
           .update({
-            ...formData,
+            ...payload,
             updated_at: new Date().toISOString(),
           })
           .eq("id", editingBranch.id);
@@ -162,7 +187,7 @@ const BranchesManager = () => {
         // Crear nueva
         const { error } = await supabase.from("sucursal").insert([
           {
-            ...formData,
+            ...payload,
             store_id: store.id,
           },
         ]);

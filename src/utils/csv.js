@@ -20,8 +20,8 @@ export const exportProductsToCSV = (products, branchStockMap, branches, storeNam
     throw new Error('No hay productos para exportar.')
   }
 
-  // 1. Encabezados base + dinámicos por sucursal
-  const headers = ['SKU', 'Título', 'Precio', 'IVA (%)']
+  // 1. Encabezados base + automotrices + dinámicos por sucursal
+  const headers = ['SKU', 'Título', 'Precio', 'IVA (%)', 'OEM', 'Código Fabricante', 'Viscosidad', 'Tipo Aceite', 'Normativa', 'Presentación', 'Origen']
   branches.forEach(b => {
     headers.push(`Stock - ${b.nombre}`)
   })
@@ -36,7 +36,14 @@ export const exportProductsToCSV = (products, branchStockMap, branches, storeNam
       p.sku || '',
       p.name || '',
       p.price !== undefined && p.price !== null ? p.price : 0,
-      p.tax !== undefined && p.tax !== null ? p.tax : 0
+      p.tax !== undefined && p.tax !== null ? p.tax : 0,
+      p.oem_number || '',
+      p.part_number_fabricante || '',
+      p.viscosidad || '',
+      p.tipo_aceite || '',
+      p.normativa_api_jaso || '',
+      p.volumen_presentacion || '',
+      p.origen_fabricacion || ''
     ]
 
     // Agregar stock de cada sucursal
@@ -120,11 +127,19 @@ export const parseProductsCSV = (csvText, existingProducts, branches) => {
   // Encabezados
   const headers = parseCSVLine(rawLines[0], delimiter).map(h => h.replace(/^"|"$/g, '').trim())
   
-  // Buscar índices de columnas base
+  // Buscar índices de columnas base y automotrices
   const skuIdx = headers.findIndex(h => /sku/i.test(h))
   const titleIdx = headers.findIndex(h => /t[íi]tulo|nombre|title|name/i.test(h))
   const priceIdx = headers.findIndex(h => /precio|price/i.test(h))
   const taxIdx = headers.findIndex(h => /iva|tax|tipo_iva|impuesto/i.test(h))
+
+  const oemIdx = headers.findIndex(h => /^oem$/i.test(h) || /oem_number/i.test(h))
+  const partNumIdx = headers.findIndex(h => /fabricante|c[óo]digo.*fabricante|part.*number/i.test(h))
+  const viscosidadIdx = headers.findIndex(h => /viscosidad/i.test(h))
+  const tipoAceiteIdx = headers.findIndex(h => /tipo.*aceite/i.test(h))
+  const normativaIdx = headers.findIndex(h => /normativa|jaso|api/i.test(h))
+  const presentacionIdx = headers.findIndex(h => /presentaci[óo]n|volumen/i.test(h))
+  const origenIdx = headers.findIndex(h => /origen/i.test(h))
 
   if (skuIdx === -1) {
     throw new Error('No se encontró la columna "SKU" obligatoria en el CSV.')
@@ -174,6 +189,14 @@ export const parseProductsCSV = (csvText, existingProducts, branches) => {
     const rowPrice = priceIdx !== -1 ? parseFloat(values[priceIdx]) : NaN
     const rowTax = taxIdx !== -1 ? parseFloat(values[taxIdx]) : 0
 
+    const rowOem = oemIdx !== -1 ? values[oemIdx] : undefined
+    const rowPartNum = partNumIdx !== -1 ? values[partNumIdx] : undefined
+    const rowViscosidad = viscosidadIdx !== -1 ? values[viscosidadIdx] : undefined
+    const rowTipoAceite = tipoAceiteIdx !== -1 ? values[tipoAceiteIdx] : undefined
+    const rowNormativa = normativaIdx !== -1 ? values[normativaIdx] : undefined
+    const rowPresentacion = presentacionIdx !== -1 ? values[presentacionIdx] : undefined
+    const rowOrigen = origenIdx !== -1 ? values[origenIdx] : undefined
+
     // Extraer stocks por sucursal
     const branchStocks = {}
     let totalStockSum = 0
@@ -217,6 +240,13 @@ export const parseProductsCSV = (csvText, existingProducts, branches) => {
         title: rowTitle || existingProduct.name,
         price: !isNaN(rowPrice) && rowPrice >= 0 ? rowPrice : existingProduct.price,
         tax: !isNaN(rowTax) && rowTax >= 0 ? rowTax : (existingProduct.tax || 0),
+        oem_number: rowOem !== undefined ? rowOem : existingProduct.oem_number,
+        part_number_fabricante: rowPartNum !== undefined ? rowPartNum : existingProduct.part_number_fabricante,
+        viscosidad: rowViscosidad !== undefined ? rowViscosidad : existingProduct.viscosidad,
+        tipo_aceite: rowTipoAceite !== undefined ? rowTipoAceite : existingProduct.tipo_aceite,
+        normativa_api_jaso: rowNormativa !== undefined ? rowNormativa : existingProduct.normativa_api_jaso,
+        volumen_presentacion: rowPresentacion !== undefined ? rowPresentacion : existingProduct.volumen_presentacion,
+        origen_fabricacion: rowOrigen !== undefined ? rowOrigen : existingProduct.origen_fabricacion,
         branchStocks,
         totalStockSum,
         action: 'update',

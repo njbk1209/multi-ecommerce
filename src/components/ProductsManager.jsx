@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { Plus, Trash2, Edit3, X, Loader2, Image as ImageIcon, Building2, Star, Link as LinkIcon, Check } from 'lucide-react'
+import { Plus, Trash2, Edit3, X, Loader2, Image as ImageIcon, Building2, Star, Link as LinkIcon, Check, Download, Upload, FileSpreadsheet } from 'lucide-react'
 import { supabase } from '../utils/supabase'
 import { useCurrency } from '../context/CurrencyContext'
 import toast from 'react-hot-toast'
 import { buildCategoryTree } from './CategoriesManager'
+import { exportProductsToCSV } from '../utils/csv'
+import CSVImportModal from './CSVImportModal'
 
 const slugify = (text) => {
   if (!text) return ''
@@ -26,7 +28,22 @@ export default function ProductsManager() {
   const [branchStockMap, setBranchStockMap] = useState({}) // { producto_id: [ { sucursal_id, nombre, stock, stock_status } ] }
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
+  const [csvModalOpen, setCsvModalOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState(null)
+
+  const handleExportCSV = () => {
+    try {
+      if (products.length === 0) {
+        toast.error('No hay productos en el catálogo para exportar.')
+        return
+      }
+      exportProductsToCSV(products, branchStockMap, branches, store?.comercial_name || 'tienda')
+      toast.success('Archivo CSV de inventario generado correctamente.')
+    } catch (err) {
+      console.error('Error al exportar CSV:', err)
+      toast.error(err.message || 'Error al exportar el archivo CSV.')
+    }
+  }
 
   // Form fields
   const [name, setName] = useState('')
@@ -520,18 +537,42 @@ export default function ProductsManager() {
           <h2 className="text-xl font-serif font-semibold text-zinc-950">Catálogo de Productos</h2>
           <p className="text-xs text-zinc-400 font-medium">Administra los productos, precios, inventarios por sucursal y visibilidad.</p>
         </div>
-        <button
-          onClick={handleOpenCreate}
-          disabled={categories.length === 0}
-          className={`flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-sm active:scale-95
-            ${categories.length === 0
-              ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed'
-              : 'bg-zinc-950 hover:bg-zinc-800 text-white'}`}
-          title={categories.length === 0 ? 'Debes crear al menos una categoría primero' : ''}
-        >
-          <Plus className="w-4 h-4" />
-          Nuevo Producto
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportCSV}
+            disabled={products.length === 0}
+            className={`flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2.5 rounded-xl border transition-all shadow-sm active:scale-95
+              ${products.length === 0
+                ? 'bg-zinc-100 text-zinc-400 border-zinc-200 cursor-not-allowed'
+                : 'bg-white hover:bg-zinc-50 text-zinc-800 border-zinc-300 hover:border-zinc-400'}`}
+            title="Descargar plantilla CSV con el inventario actual"
+          >
+            <Download className="w-4 h-4 text-emerald-600" />
+            Bajar CSV
+          </button>
+
+          <button
+            onClick={() => setCsvModalOpen(true)}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2.5 rounded-xl border bg-white hover:bg-zinc-50 text-zinc-800 border-zinc-300 hover:border-zinc-400 transition-all shadow-sm active:scale-95"
+            title="Subir archivo CSV para actualizar inventario y productos"
+          >
+            <Upload className="w-4 h-4 text-blue-600" />
+            Subir CSV
+          </button>
+
+          <button
+            onClick={handleOpenCreate}
+            disabled={categories.length === 0}
+            className={`flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-sm active:scale-95
+              ${categories.length === 0
+                ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed'
+                : 'bg-zinc-950 hover:bg-zinc-800 text-white'}`}
+            title={categories.length === 0 ? 'Debes crear al menos una categoría primero' : ''}
+          >
+            <Plus className="w-4 h-4" />
+            Nuevo Producto
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -1036,6 +1077,15 @@ export default function ProductsManager() {
           </div>
         </div>
       )}
+
+      {/* Modal de Importación CSV */}
+      <CSVImportModal
+        isOpen={csvModalOpen}
+        onClose={() => setCsvModalOpen(false)}
+        existingProducts={products}
+        branches={branches}
+        onImportSuccess={fetchData}
+      />
     </div>
   )
 }

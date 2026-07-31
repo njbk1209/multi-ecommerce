@@ -31,6 +31,7 @@ import BranchesManager from "./BranchesManager";
 import BranchInventoryManager from "./BranchInventoryManager";
 import PickingScannerModal from "./PickingScannerModal";
 import VehiclesManager from "./VehiclesManager";
+import ShippingCompaniesManager from "./ShippingCompaniesManager";
 
 const normalizePhone = (phone) => {
   if (!phone) return "";
@@ -87,9 +88,30 @@ const AdminDashboard = ({ onLogout, session }) => {
   const [expandedOrders, setExpandedOrders] = useState({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [shippingInputs, setShippingInputs] = useState({});
-  const [activeTab, setActiveTab] = useState("orders"); // 'orders' | 'products' | 'categories'
+  const [companyInputs, setCompanyInputs] = useState({});
+  const [shippingCompanies, setShippingCompanies] = useState([]);
+  const [activeTab, setActiveTab] = useState("orders"); // 'orders' | 'products' | 'categories' | 'shipping'
   const [pickedState, setPickedState] = useState({}); // { orderId: { itemId: count } }
   const [activePickingOrder, setActivePickingOrder] = useState(null);
+
+  // Cargar compañías de envío activas
+  const fetchShippingCompanies = async () => {
+    if (!store?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from("compania_envio")
+        .select("*")
+        .eq("store_id", store.id)
+        .eq("activa", true)
+        .order("nombre", { ascending: true });
+
+      if (!error) {
+        setShippingCompanies(data || []);
+      }
+    } catch (err) {
+      console.error("Error al cargar compañías de envío:", err);
+    }
+  };
 
   // Cargar pedidos de Supabase
   const fetchOrders = async (showToast = false) => {
@@ -142,7 +164,7 @@ const AdminDashboard = ({ onLogout, session }) => {
     }
   };
 
-  const handleSaveShippingCost = async (orderId, costUsdVal, order) => {
+  const handleSaveShippingCost = async (orderId, costUsdVal, companyIdVal, order) => {
     const parsedCostUsd = parseFloat(costUsdVal);
     if (isNaN(parsedCostUsd) || parsedCostUsd < 0) {
       toast.error("Ingresa un costo de envío válido.", {
@@ -150,6 +172,20 @@ const AdminDashboard = ({ onLogout, session }) => {
       });
       return;
     }
+
+    const selectedCompany = shippingCompanies.find(
+      (c) => String(c.id) === String(companyIdVal)
+    );
+    const companyName = selectedCompany
+      ? selectedCompany.nombre
+      : companyIdVal === "" || companyIdVal === null
+      ? null
+      : order.compania_envio_nombre || null;
+    const companyId = selectedCompany
+      ? selectedCompany.id
+      : companyIdVal
+      ? parseInt(companyIdVal)
+      : null;
 
     const rate = exchangeRate || 1;
     const newCostUsd = parsedCostUsd;
@@ -172,12 +208,14 @@ const AdminDashboard = ({ onLogout, session }) => {
           costo_envio_bs: newCostBs,
           total_usd: newTotalUsd,
           total_bs: newTotalBs,
+          compania_envio_id: companyId,
+          compania_envio_nombre: companyName,
         })
         .eq("id", orderId);
 
       if (error) throw error;
 
-      toast.success("Costo de envío actualizado.", {
+      toast.success("Costo y compañía de envío guardados.", {
         icon: "🚚",
         style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
       });
@@ -186,14 +224,16 @@ const AdminDashboard = ({ onLogout, session }) => {
         prev.map((o) =>
           o.id === orderId
             ? {
-              ...o,
-              costo_envio_usd: newCostUsd,
-              costo_envio_bs: newCostBs,
-              total_usd: newTotalUsd,
-              total_bs: newTotalBs,
-            }
-            : o,
-        ),
+                ...o,
+                costo_envio_usd: newCostUsd,
+                costo_envio_bs: newCostBs,
+                total_usd: newTotalUsd,
+                total_bs: newTotalBs,
+                compania_envio_id: companyId,
+                compania_envio_nombre: companyName,
+              }
+            : o
+        )
       );
     } catch (err) {
       console.error("Error al guardar costo de envío:", err);
@@ -382,10 +422,12 @@ const AdminDashboard = ({ onLogout, session }) => {
   // Cargar al montar el componente o al cambiar de tienda
   useEffect(() => {
     fetchOrders();
+    fetchShippingCompanies();
   }, [store?.id]);
 
   const handleRefresh = () => {
     fetchOrders(true);
+    fetchShippingCompanies();
   };
 
   // Cambiar el estado de un pedido en la base de datos
@@ -694,6 +736,16 @@ const AdminDashboard = ({ onLogout, session }) => {
           >
             💳 Datos de Pago
           </button>
+          <button
+            onClick={() => setActiveTab("shipping")}
+            className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all shrink-0 active:scale-95 px-1
+              ${activeTab === "shipping"
+                ? "border-zinc-900 text-zinc-950 font-bold"
+                : "border-transparent text-zinc-400 hover:text-zinc-600"
+              }`}
+          >
+            🚚 Envíos / Consolidados
+          </button>
         </div>
 
         {activeTab === "orders" && (
@@ -998,63 +1050,92 @@ const AdminDashboard = ({ onLogout, session }) => {
                                   {order.estado === "pendiente" ? (
                                     <div className="border-t border-zinc-100 pt-3 space-y-2">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 block">
-                                        Asignar Costo de Envío
+                                        Asignar Compañía y Costo de Envío
                                       </label>
-                                      <div className="flex gap-2">
-                                        <div className="relative flex-1">
-                                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">
-                                            $
-                                          </span>
-                                          <input
-                                            type="number"
-                                            step="0.01"
-                                            placeholder="0.00"
-                                            value={
-                                              shippingInputs[order.id] !==
-                                                undefined
-                                                ? shippingInputs[order.id]
-                                                : order.costo_envio_usd || ""
-                                            }
-                                            onChange={(e) =>
-                                              setShippingInputs({
-                                                ...shippingInputs,
-                                                [order.id]: e.target.value,
-                                              })
-                                            }
-                                            className="w-full pl-6 pr-3 py-2 rounded-lg border border-zinc-200 focus:ring-1 focus:ring-zinc-950 outline-none text-xs transition-all font-mono"
-                                          />
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleSaveShippingCost(
-                                              order.id,
-                                              shippingInputs[order.id] !==
-                                                undefined
-                                                ? shippingInputs[order.id]
-                                                : order.costo_envio_usd || "0",
-                                              order,
-                                            )
+                                      <div className="space-y-2">
+                                        <select
+                                          value={
+                                            companyInputs[order.id] !== undefined
+                                              ? companyInputs[order.id]
+                                              : order.compania_envio_id || ""
                                           }
-                                          className="px-3.5 py-2 bg-zinc-950 hover:bg-zinc-800 text-white text-[11px] font-semibold rounded-lg transition-all active:scale-95 shadow-sm shrink-0"
+                                          onChange={(e) =>
+                                            setCompanyInputs({
+                                              ...companyInputs,
+                                              [order.id]: e.target.value,
+                                            })
+                                          }
+                                          className="w-full px-3 py-2 rounded-lg border border-zinc-200 bg-zinc-50 focus:bg-white text-xs outline-none transition-all font-semibold text-zinc-800"
                                         >
-                                          Aplicar
-                                        </button>
+                                          <option value="">🏢 Seleccionar Empresa de Envío...</option>
+                                          {shippingCompanies.map((comp) => (
+                                            <option key={comp.id} value={comp.id}>
+                                              {comp.nombre}
+                                            </option>
+                                          ))}
+                                        </select>
+                                        <div className="flex gap-2">
+                                          <div className="relative flex-1">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">
+                                              $
+                                            </span>
+                                            <input
+                                              type="number"
+                                              step="0.01"
+                                              placeholder="0.00"
+                                              value={
+                                                shippingInputs[order.id] !== undefined
+                                                  ? shippingInputs[order.id]
+                                                  : order.costo_envio_usd || ""
+                                              }
+                                              onChange={(e) =>
+                                                setShippingInputs({
+                                                  ...shippingInputs,
+                                                  [order.id]: e.target.value,
+                                                })
+                                              }
+                                              className="w-full pl-6 pr-3 py-2 rounded-lg border border-zinc-200 focus:ring-1 focus:ring-zinc-950 outline-none text-xs transition-all font-mono"
+                                            />
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleSaveShippingCost(
+                                                order.id,
+                                                shippingInputs[order.id] !== undefined
+                                                  ? shippingInputs[order.id]
+                                                  : order.costo_envio_usd || "0",
+                                                companyInputs[order.id] !== undefined
+                                                  ? companyInputs[order.id]
+                                                  : order.compania_envio_id || null,
+                                                order
+                                              )
+                                            }
+                                            className="px-3.5 py-2 bg-zinc-950 hover:bg-zinc-800 text-white text-[11px] font-semibold rounded-lg transition-all active:scale-95 shadow-sm shrink-0"
+                                          >
+                                            Aplicar
+                                          </button>
+                                        </div>
                                       </div>
                                     </div>
                                   ) : (
-                                    order.costo_envio_usd > 0 && (
-                                      <div className="border-t border-zinc-100 pt-2.5">
+                                    (order.costo_envio_usd > 0 || order.compania_envio_nombre) && (
+                                      <div className="border-t border-zinc-100 pt-2.5 space-y-1">
                                         <p className="text-[10px] font-semibold text-zinc-500 flex items-center justify-between">
-                                          <span>
-                                            🚚 Costo de envío aplicado:
-                                          </span>
+                                          <span>🚚 Costo de envío aplicado:</span>
                                           <span className="font-bold text-zinc-900 font-mono">
-                                            ${order.costo_envio_usd.toFixed(2)}{" "}
-                                            USD /{" "}
-                                            {order.costo_envio_bs.toFixed(2)} Bs
+                                            ${(order.costo_envio_usd || 0).toFixed(2)} USD /{" "}
+                                            {(order.costo_envio_bs || 0).toFixed(2)} Bs
                                           </span>
                                         </p>
+                                        {order.compania_envio_nombre && (
+                                          <p className="text-[10px] font-semibold text-zinc-500 flex items-center justify-between">
+                                            <span>🏢 Empresa de Envío:</span>
+                                            <span className="font-bold text-zinc-900">
+                                              {order.compania_envio_nombre}
+                                            </span>
+                                          </p>
+                                        )}
                                       </div>
                                     )
                                   )}
@@ -1403,6 +1484,7 @@ const AdminDashboard = ({ onLogout, session }) => {
         {activeTab === "options" && <OptionsManager />}
         {activeTab === "settings" && <SettingsManager />}
         {activeTab === "vehicles" && <VehiclesManager />}
+        {activeTab === "shipping" && <ShippingCompaniesManager />}
       </main>
 
       {/* Modal de Picking por Código de Barras */}

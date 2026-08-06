@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect } from "react";
+import { Fragment, useState, useEffect, useMemo } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import {
   X,
@@ -15,27 +15,36 @@ import {
   IdCard,
   Building2,
   AlertTriangle,
+  Tag,
+  Sparkles,
+  CreditCard,
+  MessageCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useCart } from "../context/CartContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { supabase } from "../utils/supabase";
 import { sortBranchesByProximity } from "../utils/geo";
+import { evaluarPromocionProducto } from "../utils/promotionEngine";
 
 const buildWhatsAppMessage = ({
   nombre,
   cedula,
   whatsapp,
   cart,
-  totalUSD,
-  totalBS,
+  promotions = [],
   deliveryMethod,
+  pickupPaymentMethod,
   direccion,
   gpsUrl,
-  lugarPago,
 }) => {
   const entrega =
     deliveryMethod === "shipping" ? "Envío a domicilio" : "Retiro en tienda";
+
+  const metodoPago =
+    deliveryMethod === "pickup"
+      ? (pickupPaymentMethod === "tienda" ? "Pago en tienda al retirar" : "Pago por WhatsApp")
+      : "Pago por WhatsApp";
 
   let mensaje =
     `*Nuevo Pedido*%0A` +
@@ -43,17 +52,13 @@ const buildWhatsAppMessage = ({
     `*C.I. / RIF:* ${cedula}%0A` +
     `*WhatsApp:* ${whatsapp}%0A` +
     `*Dirección:* ${direccion}%0A` +
-    `*Método de Entrega:* ${entrega}%0A`;
-
-  if (deliveryMethod === "pickup" && lugarPago) {
-    mensaje += `*Lugar de Pago:* ${lugarPago}%0A`;
-  }
+    `*Método de Entrega:* ${entrega}%0A` +
+    `*Método de Pago:* ${metodoPago}%0A`;
 
   if (deliveryMethod === "shipping" && gpsUrl) {
     mensaje += `*Ubicación GPS:* ${gpsUrl}%0A`;
   }
 
-  // Agrupar ítems automáticamente según la sucursal de pertenencia
   const itemsByBranch = {};
   cart.forEach((item) => {
     const sucNombre =
@@ -61,7 +66,12 @@ const buildWhatsAppMessage = ({
     if (!itemsByBranch[sucNombre]) {
       itemsByBranch[sucNombre] = [];
     }
-    let itemStr = `• ${item.qty}x ${item.name}`;
+
+    const promoEval = evaluarPromocionProducto(item, item.qty, promotions);
+    const unitPrice = promoEval.tienePromocion ? promoEval.precioFinal : (item.price || 0);
+
+    let itemStr = `* ${item.qty}x ${item.name} ($${unitPrice.toFixed(2)} c/u)`;
+
     if (item.selectedOptions && item.selectedOptions.length > 0) {
       const opts = item.selectedOptions.map((o) => o.nombre).join(", ");
       itemStr += ` (${opts})`;
@@ -82,9 +92,7 @@ const buildWhatsAppMessage = ({
     mensaje += `${sucName}%0A` + itemsByBranch[sucName].join("%0A") + `%0A`;
   });
 
-  mensaje +=
-    `%0A*Total a pagar:* ${totalUSD.toFixed(2)} $ / ${totalBS.toFixed(2)} Bs.%0A%0A` +
-    `_Enviado desde la web por el cliente_`;
+  mensaje += `%0A_Enviado desde la web por el cliente_`;
 
   return mensaje;
 };
@@ -113,7 +121,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
     setCart,
     validateCartBeforeCheckout,
   } = useCart();
-  const { currency, exchangeRate, store } = useCurrency();
+  const { currency, exchangeRate, store, promotions } = useCurrency();
   const rate = exchangeRate || 1;
 
   const [showCheckoutForm, setShowCheckoutForm] = useState(false);
@@ -131,7 +139,6 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // Cargar sucursales activas de la tienda
   const [sucursales, setSucursales] = useState([]);
   useEffect(() => {
     if (!store?.id) return;
@@ -165,7 +172,40 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
-  // Determinar si hay productos pertenecientes a múltiples sucursales distintas
+  const cartFinancials = useMemo(() => {
+    let subtotalSinDescuentoUSD = 0;
+    let totalDescuentoUSD = 0;
+    let totalPagarUSD = 0;
+
+    cart.forEach((item) => {
+      const itemForEval = {
+        ...item,
+        price: parseFloat(item.price) || 0,
+        sku: item.sku || item.codigo_barra || item.barcode || null,
+        category_id: item.category_id || item.category || null,
+      };
+
+      const promoEval = evaluarPromocionProducto(itemForEval, item.qty, promotions);
+      const originalUnit = promoEval.precioOriginal || (item.price ?? 0);
+      const finalUnit = promoEval.tienePromocion ? promoEval.precioFinal : (item.price ?? 0);
+      const discountUnit = promoEval.tienePromocion ? promoEval.montoDescuentoUnitario : 0;
+
+      subtotalSinDescuentoUSD += originalUnit * item.qty;
+      totalDescuentoUSD += discountUnit * item.qty;
+      totalPagarUSD += finalUnit * item.qty;
+    });
+
+    const currentRate = exchangeRate || 1;
+    return {
+      subtotalSinDescuentoUSD,
+      totalDescuentoUSD,
+      totalPagarUSD,
+      subtotalSinDescuentoBS: subtotalSinDescuentoUSD * currentRate,
+      totalDescuentoBS: totalDescuentoUSD * currentRate,
+      totalPagarBS: totalPagarUSD * currentRate,
+    };
+  }, [cart, promotions, exchangeRate]);
+
   const uniqueBranchesInCart = new Set(
     cart
       .map(
@@ -176,7 +216,6 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
   );
   const isMultiBranchCart = uniqueBranchesInCart.size > 1;
 
-  // Ordenar carrito agrupadamente por sucursal
   const sortedCart = [...cart].sort((a, b) => {
     const nameA = a.sucursal?.nombre || a.sucursal_nombre || "";
     const nameB = b.sucursal?.nombre || b.sucursal_nombre || "";
@@ -200,61 +239,52 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
             longitude,
             sucursales,
           );
-          if (sorted && sorted.length > 0) {
-            const nearest = sorted[0];
-            const distKm = nearest.distanceKm
-              ? nearest.distanceKm.toFixed(1)
-              : null;
-            toast.success(
-              `📍 Ubicación obtenida. Sucursal más cercana: ${nearest.nombre}${distKm ? ` (${distKm} km)` : ""}`,
-              { duration: 5000 },
-            );
-          } else {
-            toast.success("Ubicación GPS registrada correctamente.");
-          }
-        } else {
-          toast.success("Ubicación GPS registrada correctamente.");
+          setSucursales(sorted);
         }
 
         setGeoLoading(false);
+        toast.success("📍 Ubicación GPS obtenida exitosamente");
       },
       (error) => {
-        console.error("Error obteniendo geolocalización:", error);
-        toast.error(
-          "No se pudo obtener la ubicación GPS. Verifica los permisos de tu navegador.",
-        );
+        console.error("Error al obtener ubicación:", error);
         setGeoLoading(false);
+        toast.error(
+          "No se pudo obtener la ubicación. Verifica los permisos de tu navegador.",
+        );
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
   };
 
-  const handleCheckout = async (e) => {
+  const handleCheckoutSubmit = async (e) => {
     e.preventDefault();
+    if (!form.nombre.trim()) {
+      toast.error("Por favor ingresa tu nombre y apellido");
+      return;
+    }
+    if (!form.cedulaNumero.trim()) {
+      toast.error("Por favor ingresa tu número de C.I. o RIF");
+      return;
+    }
+    if (!form.whatsapp.trim()) {
+      toast.error("Por favor ingresa tu número de WhatsApp");
+      return;
+    }
 
-    if (
-      !form.nombre ||
-      !form.cedulaNumero ||
-      !form.whatsapp ||
-      !direccion.trim()
-    ) {
-      toast.error("Por favor completa todos los campos obligatorios (*)");
+    if (deliveryMethod === "shipping" && !direccion.trim()) {
+      toast.error("Por favor ingresa la dirección exacta para el envío");
       return;
     }
 
     setLoading(true);
 
-    // Validar existencias y precios en tiempo real antes de finalizar
     const validation = await validateCartBeforeCheckout();
     if (!validation.valid) {
-      validation.messages.forEach((msg) =>
-        toast.error(msg, { duration: 5000 }),
-      );
+      validation.messages.forEach((msg) => toast.error(msg, { duration: 5000 }));
       setLoading(false);
       return;
     }
 
-    const cedulaCompleta = `${form.cedulaTipo}-${form.cedulaNumero.trim()}`;
     const gpsUrl = gpsLocation
       ? `https://maps.google.com/?q=${gpsLocation.lat},${gpsLocation.lng}`
       : null;
@@ -262,53 +292,60 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
     const lugarPago =
       deliveryMethod === "pickup"
         ? pickupPaymentMethod === "tienda"
-          ? "Pagar en tienda"
-          : "Pagar por WhatsApp"
+          ? "Pago en tienda al retirar"
+          : "Pago previo online"
         : null;
 
+    const fullCedula = `${form.cedulaTipo}-${form.cedulaNumero.trim()}`;
+
     const mensaje = buildWhatsAppMessage({
-      nombre: form.nombre,
-      cedula: cedulaCompleta,
-      whatsapp: form.whatsapp,
+      nombre: form.nombre.trim(),
+      cedula: fullCedula,
+      whatsapp: form.whatsapp.trim(),
       cart,
-      totalUSD: getTotal("USD"),
-      totalBS: getTotal("BS"),
+      promotions,
       deliveryMethod,
-      direccion,
+      pickupPaymentMethod,
+      direccion:
+        deliveryMethod === "shipping"
+          ? direccion.trim()
+          : "Retiro en Sucursal",
       gpsUrl,
-      lugarPago,
     });
 
     try {
       const { data: pedidoId, error: rpcError } = await supabase.rpc(
         "crear_pedido",
         {
-          p_store_id: Number(store.id),
-          p_nombre_cliente: `${form.nombre} (${cedulaCompleta})`,
-          p_whatsapp_cliente: form.whatsapp,
+          p_store_id: store.id,
+          p_nombre_cliente: form.nombre.trim(),
+          p_whatsapp_cliente: `${fullCedula} | ${form.whatsapp.trim()}`,
           p_metodo_entrega: deliveryMethod,
-          p_direccion_entrega: direccion,
+          p_direccion_entrega: direccion.trim() || null,
           p_gps_url: gpsUrl,
-          p_total_usd: getTotal("USD"),
-          p_total_bs: getTotal("BS"),
+          p_total_usd: cartFinancials.totalPagarUSD,
+          p_total_bs: cartFinancials.totalPagarBS,
           p_moneda_activa: currency,
-          p_lugar_pago: lugarPago,
-          p_items: cart.map((item) => ({
-            producto_id: item.id ? Number(item.id) : null,
-            nombre_producto: item.name,
-            cantidad: item.qty,
-            precio_unitario: item.price,
-            comentario: item.comment || null,
-            opciones_seleccionadas: item.selectedOptions || null,
-            sucursal_id:
-              item.sucursal_id || item.sucursal?.id
-                ? Number(item.sucursal_id || item.sucursal?.id)
-                : null,
-            sucursal_nombre:
-              item.sucursal?.nombre || item.sucursal_nombre || null,
-            sku: item.sku || null,
-            codigo_barra: item.barcode || item.codigo_barra || null,
-          })),
+          p_items: cart.map((item) => {
+            const promoEval = evaluarPromocionProducto(item, item.qty, promotions);
+            const unitFinalPrice = promoEval.tienePromocion ? promoEval.precioFinal : item.price;
+            return {
+              producto_id: item.id ? Number(item.id) : null,
+              nombre_producto: item.name,
+              cantidad: Number(item.qty),
+              precio_unitario: unitFinalPrice,
+              comentario: item.comment || null,
+              opciones_seleccionadas: item.selectedOptions || null,
+              sucursal_id:
+                item.sucursal_id || item.sucursal?.id
+                  ? Number(item.sucursal_id || item.sucursal?.id)
+                  : null,
+              sucursal_nombre:
+                item.sucursal?.nombre || item.sucursal_nombre || null,
+              sku: item.sku || null,
+              codigo_barra: item.barcode || item.codigo_barra || null,
+            };
+          }),
         },
       );
 
@@ -322,8 +359,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
         return;
       }
 
-      console.log("Pedido guardado exitosamente con ID:", pedidoId);
-      toast.success("¡Pedido registrado exitosamente en sistema!");
+      toast.success("¡Pedido registrado exitosamente!");
     } catch (dbErr) {
       console.error("Excepción al intentar crear pedido en Supabase:", dbErr);
       toast.error(
@@ -336,18 +372,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
 
     const storeWhatsapp = store?.whatsapp || "584245305968";
     let formattedWhatsapp = storeWhatsapp.replace(/\D/g, "");
-    if (formattedWhatsapp.length > 0) {
-      if (formattedWhatsapp.startsWith("0")) {
-        formattedWhatsapp = "58" + formattedWhatsapp.substring(1);
-      } else if (
-        formattedWhatsapp.length === 10 &&
-        !formattedWhatsapp.startsWith("58")
-      ) {
-        formattedWhatsapp = "58" + formattedWhatsapp;
-      }
-    } else {
-      formattedWhatsapp = "584245305968";
-    }
+    if (formattedWhatsapp.startsWith("0")) formattedWhatsapp = "58" + formattedWhatsapp.substring(1);
 
     const waUrl = `https://wa.me/${formattedWhatsapp}?text=${mensaje}`;
 
@@ -440,11 +465,18 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                         ) : (
                           <ul className="divide-y divide-gray-100">
                             {sortedCart.map((product) => {
-                              const itemPriceUSD = product.price ?? 0;
-                              const itemPriceBS =
-                                product.price_bs ?? itemPriceUSD * rate;
-                              const subtotalUSD = itemPriceUSD * product.qty;
-                              const subtotalBS = itemPriceBS * product.qty;
+                              const itemForEval = {
+                                ...product,
+                                price: parseFloat(product.price) || 0,
+                                sku: product.sku || product.codigo_barra || product.barcode || null,
+                                category_id: product.category_id || product.category || null,
+                              };
+                              const promoEval = evaluarPromocionProducto(itemForEval, product.qty, promotions);
+                              const originalUnitPrice = promoEval.precioOriginal || (product.price ?? 0);
+                              const effectiveUnitPrice = promoEval.tienePromocion ? promoEval.precioFinal : (product.price ?? 0);
+
+                              const itemPriceBS = effectiveUnitPrice * rate;
+                              const subtotalUSD = effectiveUnitPrice * product.qty;
                               const sucursalNombre =
                                 product.sucursal?.nombre ||
                                 product.sucursal_nombre;
@@ -454,7 +486,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                   key={product.cartItemId}
                                   className="flex py-4 items-center gap-3.5"
                                 >
-                                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-primary-light bg-gray-50">
+                                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-primary-light bg-gray-50 relative">
                                     {product.image ? (
                                       <img
                                         src={product.image}
@@ -463,15 +495,23 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                       />
                                     ) : (
                                       <div className="h-full w-full bg-primary-light/50 flex items-center justify-center text-primary font-serif font-bold text-xs">
-                                        Farma
+                                        Tienda
                                       </div>
                                     )}
                                   </div>
 
                                   <div className="flex-1 min-w-0">
-                                    <h4 className="font-semibold text-gray-800 text-sm truncate">
-                                      {product.name}
-                                    </h4>
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <h4 className="font-semibold text-gray-800 text-sm truncate">
+                                        {product.name}
+                                      </h4>
+                                      {promoEval.tienePromocion && (
+                                        <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-1.5 py-0.5 rounded border border-emerald-300 flex items-center gap-0.5 shrink-0">
+                                          <Tag className="w-2.5 h-2.5" />
+                                          {promoEval.badgeText}
+                                        </span>
+                                      )}
+                                    </div>
 
                                     {sucursalNombre && (
                                       <p className="text-[10px] text-slate-400 font-medium italic flex items-center gap-1 mt-0.5 tracking-tight">
@@ -492,15 +532,6 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                                 className="text-[10px] bg-primary-light text-primary-dark px-1.5 py-0.5 rounded font-medium border border-primary-light flex items-center gap-0.5"
                                               >
                                                 {opt.nombre}
-                                                {opt.price_modifier > 0 && (
-                                                  <span className="opacity-80">
-                                                    (+$
-                                                    {opt.price_modifier.toFixed(
-                                                      2,
-                                                    )}
-                                                    )
-                                                  </span>
-                                                )}
                                               </span>
                                             ),
                                           )}
@@ -513,44 +544,59 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                       </p>
                                     )}
 
-                                    <p className="text-xs text-gray-500 my-1 font-light flex items-center gap-1.5 flex-wrap">
-                                      <span>
-                                        Unitario: ${itemPriceUSD.toFixed(2)}
+                                    <div className="text-xs text-gray-500 my-1 font-light flex items-center gap-1.5 flex-wrap">
+                                      <span>Unitario:</span>
+                                      <span className="font-semibold text-primary">
+                                        ${effectiveUnitPrice.toFixed(2)}
                                       </span>
+                                      {promoEval.tienePromocion && (
+                                        <span className="line-through text-gray-400 text-[11px] decoration-red-400">
+                                          ${originalUnitPrice.toFixed(2)}
+                                        </span>
+                                      )}
                                       {exchangeRate && (
-                                        <span className="text-[11px] text-gray-400 font-medium">
+                                        <span className="text-[10px] text-gray-400 font-medium">
                                           (≈ {itemPriceBS.toFixed(2)} Bs)
                                         </span>
                                       )}
-                                    </p>
+                                    </div>
 
-                                    <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden w-fit">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          updateQuantity(product.cartItemId, -1)
-                                        }
-                                        className="px-2.5 py-1 bg-primary-light text-primary-dark hover:bg-primary/20 transition-colors font-bold text-xs"
-                                      >
-                                        -
-                                      </button>
-                                      <span className="px-3 py-1 text-xs font-semibold text-gray-700">
-                                        {product.qty}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          updateQuantity(product.cartItemId, 1)
-                                        }
-                                        disabled={product.qty >= product.stock}
-                                        className={`px-2.5 py-1 bg-primary-light text-primary-dark transition-colors font-bold text-xs ${
-                                          product.qty >= product.stock
-                                            ? "opacity-30 cursor-not-allowed"
-                                            : "hover:bg-primary/20"
-                                        }`}
-                                      >
-                                        +
-                                      </button>
+                                    <div className="flex items-center gap-2">
+                                      <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden w-fit">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateQuantity(product.cartItemId, -1)
+                                          }
+                                          className="px-2.5 py-1 bg-primary-light text-primary-dark hover:bg-primary/20 transition-colors font-bold text-xs"
+                                        >
+                                          -
+                                        </button>
+                                        <span className="px-3 py-1 text-xs font-semibold text-gray-700">
+                                          {product.qty}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateQuantity(product.cartItemId, 1)
+                                          }
+                                          disabled={product.qty >= product.stock}
+                                          className={`px-2.5 py-1 bg-primary-light text-primary-dark transition-colors font-bold text-xs ${product.qty >= product.stock
+                                              ? "opacity-30 cursor-not-allowed"
+                                              : "hover:bg-primary/20"
+                                            }`}
+                                        >
+                                          +
+                                        </button>
+                                      </div>
+
+                                      {/* Sugerencia de próximo escalón de volumen */}
+                                      {promoEval.proximoEscalon && (
+                                        <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium flex items-center gap-0.5">
+                                          <Sparkles className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                          +{promoEval.proximoEscalon.cantidadFaltante} más ➔ {promoEval.proximoEscalon.tipoDescuento === 'porcentaje' ? `${promoEval.proximoEscalon.valorDescuento}%` : `$${promoEval.proximoEscalon.valorDescuento}`} off
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
 
@@ -558,17 +604,13 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                                     <p className="font-bold text-primary-dark text-sm">
                                       ${subtotalUSD.toFixed(2)}
                                     </p>
-                                    {exchangeRate && (
-                                      <p className="text-[11px] text-gray-500 font-medium opacity-85">
-                                        ≈ {subtotalBS.toFixed(2)} Bs
-                                      </p>
-                                    )}
                                     <button
                                       type="button"
                                       onClick={() =>
                                         removeFromCart(product.cartItemId)
                                       }
-                                      className="text-gray-400 hover:text-rose-600 transition-colors p-1 rounded-lg"
+                                      className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                                      title="Eliminar producto"
                                     >
                                       <Trash2 className="w-4 h-4" />
                                     </button>
@@ -580,281 +622,255 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                         )}
                       </div>
                     ) : (
-                      /* PASO 2: FORMULARIO DE CHECKOUT SCROLLEABLE */
+                      /* PASO 2: FORMULARIO DE CHECKOUT */
                       <form
                         id="checkout-form"
-                        onSubmit={handleCheckout}
-                        className="space-y-4 animate-in fade-in duration-200"
+                        onSubmit={handleCheckoutSubmit}
+                        className="space-y-4"
                       >
-                        {/* Resumen Compacto */}
-                        <div className="bg-primary-light/40 border border-primary-light/80 rounded-xl p-3 space-y-1">
-                          <p className="text-[11px] font-bold text-primary-dark uppercase tracking-wider flex items-center justify-between">
-                            <span>
-                              Resumen ({cart.reduce((a, c) => a + c.qty, 0)}{" "}
-                              productos)
-                            </span>
-                            <span className="font-mono text-xs">
-                              ${getTotal("USD").toFixed(2)} USD
-                            </span>
-                          </p>
-                          <p className="text-[11px] text-gray-600 truncate">
-                            {cart.map((i) => `${i.qty}x ${i.name}`).join(", ")}
-                          </p>
+                        <div className="border border-primary-light p-3.5 rounded-2xl">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-primary-dark flex items-center gap-1.5 mb-2">
+                            <User className="w-3.5 h-3.5 text-primary" /> Datos del
+                            Cliente
+                          </h4>
+                          <div className="space-y-2.5">
+                            <div>
+                              <label className="text-[11px] font-semibold text-gray-600 block mb-1">
+                                Nombre y Apellido *
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="Ej: Juan Pérez"
+                                value={form.nombre}
+                                onChange={(e) =>
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    nombre: e.target.value,
+                                  }))
+                                }
+                                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary bg-white"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <label className="text-[11px] font-semibold text-gray-600 block mb-1">
+                                  Tipo *
+                                </label>
+                                <select
+                                  value={form.cedulaTipo}
+                                  onChange={(e) =>
+                                    setForm((prev) => ({
+                                      ...prev,
+                                      cedulaTipo: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full px-2 py-2 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary bg-white"
+                                >
+                                  <option value="V">V-</option>
+                                  <option value="J">J-</option>
+                                  <option value="E">E-</option>
+                                  <option value="G">G-</option>
+                                </select>
+                              </div>
+                              <div className="col-span-2">
+                                <label className="text-[11px] font-semibold text-gray-600 block mb-1">
+                                  C.I. / RIF *
+                                </label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="Ej: 12345678"
+                                  value={form.cedulaNumero}
+                                  onChange={(e) =>
+                                    setForm((prev) => ({
+                                      ...prev,
+                                      cedulaNumero: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary bg-white"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[11px] font-semibold text-gray-600 block mb-1">
+                                WhatsApp de Contacto *
+                              </label>
+                              <input
+                                type="tel"
+                                required
+                                placeholder="Ej: 04141234567"
+                                value={form.whatsapp}
+                                onChange={(e) =>
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    whatsapp: e.target.value,
+                                  }))
+                                }
+                                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary bg-white"
+                              />
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Selector método de entrega */}
-                        <div>
-                          <label className="text-[11px] font-bold uppercase tracking-wider text-primary-dark mb-1.5 block">
-                            Elige el Método de Entrega *
-                          </label>
+                        {/* MÉTODO DE ENTREGA */}
+                        <div className="bg-white border border-gray-200 p-3.5 rounded-2xl">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-primary-dark flex items-center gap-1.5 mb-2.5">
+                            <Truck className="w-3.5 h-3.5 text-primary" /> Método de Entrega
+                          </h4>
                           <div className="grid grid-cols-2 gap-2">
-                            {DELIVERY_OPTIONS.map(({ value, label, Icon }) => {
-                              const active = deliveryMethod === value;
+                            {DELIVERY_OPTIONS.map((opt) => {
+                              const SelectedIcon = opt.Icon;
+                              const isSelected = deliveryMethod === opt.value;
                               return (
                                 <button
-                                  key={value}
+                                  key={opt.value}
                                   type="button"
-                                  onClick={() => setDeliveryMethod(value)}
-                                  className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border text-center transition-all duration-200 cursor-pointer ${
-                                    active
-                                      ? "border-primary bg-primary-light text-primary-dark font-semibold shadow-xs"
-                                      : "border-gray-200 bg-white text-gray-500 hover:border-primary-light"
-                                  }`}
+                                  onClick={() => setDeliveryMethod(opt.value)}
+                                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${isSelected
+                                      ? "border-primary bg-primary-light/50 text-primary-dark font-bold shadow-xs"
+                                      : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                                    }`}
                                 >
-                                  <Icon
-                                    className={`w-5 h-5 ${active ? "text-primary" : "text-gray-400"}`}
-                                  />
-                                  <span className="text-xs leading-tight">
-                                    {label}
-                                  </span>
+                                  <SelectedIcon className="w-4 h-4 text-primary mb-1" />
+                                  <p className="text-xs font-semibold">
+                                    {opt.label}
+                                  </p>
+                                  <p className="text-[10px] opacity-75 font-normal line-clamp-1">
+                                    {opt.description}
+                                  </p>
                                 </button>
                               );
                             })}
                           </div>
-                        </div>
 
-                        {/* Datos de Cliente & Facturación */}
-                        <div className="pt-2 border-t border-primary-light/60 space-y-3">
-                          <p className="text-xs font-bold uppercase tracking-wider text-primary-dark flex items-center gap-1.5">
-                            <FileText className="w-4 h-4 text-primary" />
-                            Datos de Cliente & Facturación
-                          </p>
-
-                          <div>
-                            <label className="text-[11px] font-semibold text-gray-600 mb-1 block">
-                              Nombre Completo *
-                            </label>
-                            <div className="relative">
-                              <User className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                              <input
-                                required
-                                type="text"
-                                value={form.nombre}
-                                placeholder="Ej. María Pérez"
-                                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-primary focus:border-primary outline-none text-sm"
-                                onChange={(e) =>
-                                  setForm({ ...form, nombre: e.target.value })
-                                }
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="text-[11px] font-semibold text-gray-600 mb-1 block">
-                              Identificación (C.I. / RIF) *
-                            </label>
-                            <div className="flex gap-2">
-                              <select
-                                value={form.cedulaTipo}
-                                onChange={(e) =>
-                                  setForm({
-                                    ...form,
-                                    cedulaTipo: e.target.value,
-                                  })
-                                }
-                                className="px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm font-bold text-gray-700 focus:ring-2 focus:ring-primary outline-none"
-                              >
-                                <option value="V">V-</option>
-                                <option value="E">E-</option>
-                                <option value="J">J-</option>
-                                <option value="G">G-</option>
-                                <option value="P">P-</option>
-                              </select>
-                              <div className="relative flex-1">
-                                <IdCard className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                <input
+                          {deliveryMethod === "shipping" && (
+                            <div className="space-y-2 pt-3 mt-3 border-t border-gray-100">
+                              <div>
+                                <label className="text-[11px] font-semibold text-gray-600 block mb-1">
+                                  Dirección de Entrega Completa *
+                                </label>
+                                <textarea
                                   required
-                                  type="text"
-                                  value={form.cedulaNumero}
-                                  placeholder="12345678"
-                                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-primary focus:border-primary outline-none text-sm"
-                                  onChange={(e) =>
-                                    setForm({
-                                      ...form,
-                                      cedulaNumero: e.target.value.replace(
-                                        /\D/g,
-                                        "",
-                                      ),
-                                    })
-                                  }
+                                  rows={2}
+                                  placeholder="Ej: Calle Principal, Res. El Sol, Apt 4B, Barquisimeto"
+                                  value={direccion}
+                                  onChange={(e) => setDireccion(e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary bg-white"
                                 />
                               </div>
-                            </div>
-                          </div>
 
-                          <div>
-                            <label className="text-[11px] font-semibold text-gray-600 mb-1 block">
-                              Número de WhatsApp *
-                            </label>
-                            <div className="relative">
-                              <Phone className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                              <input
-                                required
-                                type="tel"
-                                value={form.whatsapp}
-                                placeholder="04121234567"
-                                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-primary focus:border-primary outline-none text-sm"
-                                onChange={(e) =>
-                                  setForm({ ...form, whatsapp: e.target.value })
-                                }
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="text-[11px] font-semibold text-gray-600 mb-1 block">
-                              Dirección de Facturación / Habitación *
-                            </label>
-                            <div className="relative">
-                              <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-3 pointer-events-none" />
-                              <textarea
-                                required
-                                value={direccion}
-                                placeholder="Calle, avenida, casa/apto y punto de referencia..."
-                                rows={2}
-                                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white focus:ring-2 focus:ring-primary focus:border-primary outline-none text-sm resize-none"
-                                onChange={(e) => setDireccion(e.target.value)}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Opciones de Lugar de Pago para Retiro en Tienda */}
-                          {deliveryMethod === "pickup" && (
-                            <div className="pt-1 space-y-1.5 animate-in fade-in duration-200">
-                              <label className="text-[11px] font-bold uppercase tracking-wider text-primary-dark block">
-                                ¿Dónde realizarás el pago? *
-                              </label>
-                              <div className="grid grid-cols-2 gap-2">
+                              {!gpsLocation ? (
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    setPickupPaymentMethod("tienda")
-                                  }
-                                  className={`flex items-center justify-center gap-1.5 p-2.5 rounded-xl border text-xs font-semibold transition-all duration-200 cursor-pointer ${
-                                    pickupPaymentMethod === "tienda"
-                                      ? "border-primary bg-primary-light text-primary-dark shadow-xs"
-                                      : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
-                                  }`}
+                                  disabled={geoLoading}
+                                  onClick={handleGeolocate}
+                                  className={`w-full py-2 px-3 rounded-lg border border-dashed border-primary-light text-primary hover:bg-primary-light transition-colors text-xs font-medium flex items-center justify-center gap-1.5 ${geoLoading
+                                      ? "opacity-50 cursor-not-allowed"
+                                      : ""
+                                    }`}
                                 >
-                                  <span>🏪 Pagar en tienda</span>
+                                  {geoLoading ? (
+                                    <>
+                                      <span className="animate-spin text-primary">
+                                        ⏳
+                                      </span>
+                                      Obteniendo ubicación...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span>📍</span>
+                                      Obtener mi ubicación GPS
+                                    </>
+                                  )}
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setPickupPaymentMethod("whatsapp")
-                                  }
-                                  className={`flex items-center justify-center gap-1.5 p-2.5 rounded-xl border text-xs font-semibold transition-all duration-200 cursor-pointer ${
-                                    pickupPaymentMethod === "whatsapp"
-                                      ? "border-primary bg-primary-light text-primary-dark shadow-xs"
-                                      : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
-                                  }`}
-                                >
-                                  <span>💬 Pagar por WhatsApp</span>
-                                </button>
-                              </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <div className="text-[10px] text-emerald-600 bg-emerald-50 py-0.5 px-2 rounded w-fit font-medium flex items-center gap-1">
+                                    <span>✓</span> Ubicación GPS guardada
+                                  </div>
+                                  <iframe
+                                    title="Ubicación de entrega"
+                                    width="100%"
+                                    height="120"
+                                    frameBorder="0"
+                                    scrolling="no"
+                                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${gpsLocation.lng - 0.002}%2C${gpsLocation.lat - 0.001}%2C${gpsLocation.lng + 0.002}%2C${gpsLocation.lat + 0.001}&layer=mapnik&marker=${gpsLocation.lat}%2C${gpsLocation.lng}`}
+                                    className="rounded-lg border border-slate-100 shadow-inner"
+                                  />
+                                </div>
+                              )}
                             </div>
                           )}
 
-                          {/* GPS & Avisos para Envío */}
-                          {deliveryMethod === "shipping" && (
-                            <div className="space-y-2 pt-1">
-                              {isMobile && (
-                                <div className="bg-white rounded-xl p-3 border border-primary-light space-y-2">
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-[11px] font-semibold text-primary-dark">
-                                      📍 Ubicación GPS (Recomendado)
-                                    </span>
-                                    {gpsLocation && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setGpsLocation(null)}
-                                        className="text-[10px] text-primary hover:text-primary-dark hover:underline"
-                                      >
-                                        Quitar
-                                      </button>
-                                    )}
-                                  </div>
+                          {isMultiBranchCart && (
+                            <p className="mt-2 text-xs text-amber-800 bg-amber-50/90 border border-amber-200 rounded-xl p-3 text-left font-medium leading-relaxed flex items-start gap-2">
+                              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                              <span>
+                                <strong>Aviso de Envío Multi-Almacén:</strong>{" "}
+                                Tu pedido incluye artículos en distintas
+                                sedes.
+                              </span>
+                            </p>
+                          )}
+                        </div>
 
-                                  {!gpsLocation ? (
-                                    <button
-                                      type="button"
-                                      disabled={geoLoading}
-                                      onClick={handleGeolocate}
-                                      className={`w-full py-2 px-3 rounded-lg border border-dashed border-primary-light text-primary hover:bg-primary-light transition-colors text-xs font-medium flex items-center justify-center gap-1.5 ${
-                                        geoLoading
-                                          ? "opacity-50 cursor-not-allowed"
-                                          : ""
-                                      }`}
-                                    >
-                                      {geoLoading ? (
-                                        <>
-                                          <span className="animate-spin text-primary">
-                                            ⏳
-                                          </span>
-                                          Obteniendo ubicación...
-                                        </>
-                                      ) : (
-                                        <>
-                                          <span>📍</span>
-                                          Obtener mi ubicación GPS
-                                        </>
-                                      )}
-                                    </button>
-                                  ) : (
-                                    <div className="space-y-2">
-                                      <div className="text-[10px] text-emerald-600 bg-emerald-50 py-0.5 px-2 rounded w-fit font-medium flex items-center gap-1">
-                                        <span>✓</span> Ubicación GPS guardada
-                                      </div>
-                                      <iframe
-                                        title="Ubicación de entrega"
-                                        width="100%"
-                                        height="120"
-                                        frameBorder="0"
-                                        scrolling="no"
-                                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${gpsLocation.lng - 0.002}%2C${gpsLocation.lat - 0.001}%2C${gpsLocation.lng + 0.002}%2C${gpsLocation.lat + 0.001}&layer=mapnik&marker=${gpsLocation.lat}%2C${gpsLocation.lng}`}
-                                        className="rounded-lg border border-slate-100 shadow-inner"
-                                      />
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                        {/* RECUADRO INDEPENDIENTE: FORMA DE PAGO */}
+                        <div className="bg-white border border-gray-200 p-3.5 rounded-2xl">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-primary-dark flex items-center gap-1.5 mb-2.5">
+                            <CreditCard className="w-3.5 h-3.5 text-primary" /> Forma de Pago
+                          </h4>
 
-                              {isMultiBranchCart && (
-                                <p className="text-xs text-amber-800 bg-amber-50/90 border border-amber-200 rounded-xl p-3 text-left font-medium leading-relaxed flex items-start gap-2">
-                                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                                  <span>
-                                    <strong>Aviso de Envío Multi-Almacén:</strong>{" "}
-                                    Tu pedido incluye artículos en distintas
-                                    sedes. Se coordinará recargo adicional por
-                                    logística.
-                                  </span>
+                          {deliveryMethod === "pickup" ? (
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setPickupPaymentMethod("tienda")}
+                                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                                  pickupPaymentMethod === "tienda"
+                                    ? "border-primary bg-primary-light/50 text-primary-dark font-bold shadow-xs"
+                                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                                }`}
+                              >
+                                <Building2 className="w-4 h-4 text-primary mb-1" />
+                                <p className="text-xs font-semibold">
+                                  Pago en Tienda
                                 </p>
-                              )}
-
-                              <p className="text-xs text-primary bg-primary-light/50 border border-primary-light rounded-xl p-2.5 text-center font-medium leading-relaxed">
-                                🛵 El costo de envío se coordinará tras enviar
-                                el pedido.
-                              </p>
+                                <p className="text-[10px] opacity-75 font-normal line-clamp-1">
+                                  Al momento de retirar
+                                </p>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPickupPaymentMethod("online")}
+                                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                                  pickupPaymentMethod === "online"
+                                    ? "border-primary bg-primary-light/50 text-primary-dark font-bold shadow-xs"
+                                    : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                                }`}
+                              >
+                                <MessageCircle className="w-4 h-4 text-primary mb-1" />
+                                <p className="text-xs font-semibold">
+                                  Pago por WhatsApp
+                                </p>
+                                <p className="text-[10px] opacity-75 font-normal line-clamp-1">
+                                  PagoMóvil / Zelle previo
+                                </p>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="col-span-2 p-2.5 rounded-xl border border-primary bg-primary-light/50 text-primary-dark text-left shadow-xs">
+                                <MessageCircle className="w-4 h-4 text-primary mb-1" />
+                                <p className="text-xs font-bold">
+                                  Pago previo por WhatsApp
+                                </p>
+                                <p className="text-[10px] opacity-80 font-normal leading-relaxed">
+                                  Te enviaremos los datos de PagoMóvil / Zelle / Transferencia al confirmar tu pedido.
+                                </p>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -868,19 +884,36 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                       {!showCheckoutForm ? (
                         /* FOOTER PASO 1: FINALIZAR COMPRA */
                         <div>
-                          <div className="flex justify-between items-center mb-3">
-                            <p className="text-sm font-semibold text-primary-dark font-serif">
-                              Total Estimado
-                            </p>
-                            <div className="text-right">
-                              <p className="text-lg font-bold font-serif text-primary-dark leading-none">
-                                ${getTotal("USD").toFixed(2)} USD
+                          <div className="space-y-1.5 mb-3">
+                            {cartFinancials.totalDescuentoUSD > 0 && (
+                              <>
+                                <div className="flex justify-between items-center text-xs text-gray-500">
+                                  <span>Subtotal (precio regular)</span>
+                                  <span>${cartFinancials.subtotalSinDescuentoUSD.toFixed(2)} USD</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
+                                  <span className="flex items-center gap-1">
+                                    <Tag className="w-3.5 h-3.5 text-emerald-600" />
+                                    Descuento por Promoción
+                                  </span>
+                                  <span>-${cartFinancials.totalDescuentoUSD.toFixed(2)} USD</span>
+                                </div>
+                              </>
+                            )}
+                            <div className="flex justify-between items-center">
+                              <p className="text-sm font-semibold text-primary-dark font-serif">
+                                Total Estimado
                               </p>
-                              {exchangeRate && (
-                                <p className="text-[11px] font-medium text-gray-500 mt-0.5">
-                                  ≈ {getTotal("BS").toFixed(2)} Bs
+                              <div className="text-right">
+                                <p className="text-lg font-bold font-serif text-primary-dark leading-none">
+                                  ${cartFinancials.totalPagarUSD.toFixed(2)} USD
                                 </p>
-                              )}
+                                {exchangeRate && (
+                                  <p className="text-[11px] font-medium text-gray-500 mt-0.5">
+                                    ≈ {cartFinancials.totalPagarBS.toFixed(2)} Bs
+                                  </p>
+                                )}
+                              </div>
                             </div>
                           </div>
 
@@ -896,19 +929,36 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                       ) : (
                         /* FOOTER PASO 2: PEDIR POR WHATSAPP */
                         <div>
-                          <div className="flex justify-between items-center mb-3">
-                            <p className="text-sm font-semibold text-primary-dark font-serif">
-                              Total a Pagar
-                            </p>
-                            <div className="text-right">
-                              <p className="text-lg font-bold font-serif text-primary-dark leading-none">
-                                ${getTotal("USD").toFixed(2)} USD
+                          <div className="space-y-1.5 mb-3">
+                            {cartFinancials.totalDescuentoUSD > 0 && (
+                              <>
+                                <div className="flex justify-between items-center text-xs text-gray-500">
+                                  <span>Subtotal (precio regular)</span>
+                                  <span>${cartFinancials.subtotalSinDescuentoUSD.toFixed(2)} USD</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
+                                  <span className="flex items-center gap-1">
+                                    <Tag className="w-3.5 h-3.5 text-emerald-600" />
+                                    Descuento por Promoción
+                                  </span>
+                                  <span>-${cartFinancials.totalDescuentoUSD.toFixed(2)} USD</span>
+                                </div>
+                              </>
+                            )}
+                            <div className="flex justify-between items-center">
+                              <p className="text-sm font-semibold text-primary-dark font-serif">
+                                Total a Pagar
                               </p>
-                              {exchangeRate && (
-                                <p className="text-[11px] font-medium text-gray-500 mt-0.5">
-                                  ≈ {getTotal("BS").toFixed(2)} Bs
+                              <div className="text-right">
+                                <p className="text-lg font-bold font-serif text-primary-dark leading-none">
+                                  ${cartFinancials.totalPagarUSD.toFixed(2)} USD
                                 </p>
-                              )}
+                                {exchangeRate && (
+                                  <p className="text-[11px] font-medium text-gray-500 mt-0.5">
+                                    ≈ {cartFinancials.totalPagarBS.toFixed(2)} Bs
+                                  </p>
+                                )}
+                              </div>
                             </div>
                           </div>
 
@@ -916,16 +966,15 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
                             type="submit"
                             form="checkout-form"
                             disabled={loading}
-                            className={`w-full py-3.5 rounded-full font-bold transition-all flex items-center justify-center gap-2 text-white shadow-md cursor-pointer text-sm active:scale-95 ${
-                              loading
+                            className={`w-full py-3.5 rounded-full font-bold transition-all flex items-center justify-center gap-2 text-white shadow-md cursor-pointer text-sm active:scale-95 ${loading
                                 ? "bg-gray-400 cursor-not-allowed"
                                 : "bg-primary hover:bg-primary-dark shadow-primary-light"
-                            }`}
+                              }`}
                           >
                             {loading ? (
                               <>
                                 <span className="animate-spin text-sm">⏳</span>
-                                <span>Procesando pedido...</span>
+                                <span>Procesando...</span>
                               </>
                             ) : (
                               <>

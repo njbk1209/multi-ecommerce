@@ -11,12 +11,14 @@ import { supabase } from "../utils/supabase";
 import { useCurrency } from "../context/CurrencyContext";
 import { buildCategoryTree } from "../components/CategoriesManager";
 import { parseYearTermsFromQuery, getProductIdsMatchingYears } from "../utils/yearSearch";
+import { evaluarPromocionProducto } from "../utils/promotionEngine";
 
 const ITEMS_PER_PAGE = 16;
 
 const DEFAULT_FILTERS = {
   categories: [],
   hasDiscount: false,
+  selectedPromoId: '',
   priceMin: '',
   priceMax: '',
   inStockOnly: false,
@@ -24,7 +26,7 @@ const DEFAULT_FILTERS = {
 };
 
 const ProductList = () => {
-  const { store, exchangeRate } = useCurrency();
+  const { store, exchangeRate, promotions } = useCurrency();
 
   // Data states
   const [products, setProducts] = useState([]);
@@ -440,6 +442,43 @@ const ProductList = () => {
     return pages;
   };
 
+  const activePromoObj = useMemo(() => {
+    if (!filters.selectedPromoId || !Array.isArray(promotions)) return null;
+    return promotions.find((p) => String(p.id) === String(filters.selectedPromoId)) || null;
+  }, [filters.selectedPromoId, promotions]);
+
+  const filteredProducts = useMemo(() => {
+    let result = products;
+
+    // 1. Filtrar por promoción específica seleccionada
+    if (activePromoObj) {
+      const rules = activePromoObj.promocion_regla || activePromoObj.reglas || [];
+      const targetSkus = new Set(
+        rules.map((r) => String(r.sku || "").trim().toLowerCase()).filter(Boolean)
+      );
+      const targetCatIds = new Set(
+        rules.map((r) => String(r.category_id || "")).filter(Boolean)
+      );
+
+      result = result.filter((p) => {
+        const skuVal = String(p.sku || p.codigo_barra || p.barcode || "").trim().toLowerCase();
+        const catVal = String(p.category_id || p.category || "");
+        return targetSkus.has(skuVal) || targetCatIds.has(catVal);
+      });
+    }
+
+    // 2. Filtrar por ofertas/descuentos generales
+    if (filters.hasDiscount) {
+      result = result.filter((p) => {
+        const hasStaticDiscount = p.compare_price && parseFloat(p.compare_price) > parseFloat(p.price);
+        const promoEval = evaluarPromocionProducto(p, 1, promotions);
+        return hasStaticDiscount || promoEval.tienePromocion;
+      });
+    }
+
+    return result;
+  }, [products, activePromoObj, filters.hasDiscount, promotions]);
+
   if (!store) {
     return (
       <div className="py-20 text-center text-primary-dark animate-pulse font-serif">
@@ -463,10 +502,10 @@ const ProductList = () => {
       </div>
 
       {/* Header: Búsqueda + Ordenar + Filtrar */}
-      <div className="mb-4">
+      <div className="mb-6">
         <CatalogHeader
           searchQuery={searchQuery}
-          onSearch={handleSearch}
+          onSearchChange={handleSearch}
           sortBy={sortBy}
           onSortChange={handleSortChange}
           isFiltersOpen={isFiltersOpen}
@@ -480,6 +519,7 @@ const ProductList = () => {
         isOpen={isFiltersOpen}
         onClose={() => setIsFiltersOpen(false)}
         categoryTree={categoryTree}
+        promotions={promotions}
         filters={filters}
         onFiltersChange={handleFiltersChange}
         onApply={handleApplyFilters}
@@ -501,6 +541,20 @@ const ProductList = () => {
                 onClick={() => setSearchQuery('')}
                 className="p-0.5 hover:bg-primary/20 rounded-full transition-colors cursor-pointer"
                 title="Eliminar búsqueda"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </span>
+          )}
+
+          {/* Promoción específica seleccionada */}
+          {activePromoObj && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
+              🏷️ Promo: {activePromoObj.nombre}
+              <button
+                onClick={() => setFilters((prev) => ({ ...prev, selectedPromoId: "" }))}
+                className="p-0.5 hover:bg-amber-200 rounded-full transition-colors cursor-pointer"
+                title="Quitar filtro de promoción"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -532,7 +586,7 @@ const ProductList = () => {
           {/* Descuentos */}
           {filters.hasDiscount && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-primary-light text-primary-dark border border-primary-light shadow-2xs">
-              Con descuento
+              Con oferta / promoción
               <button
                 onClick={() => setFilters((prev) => ({ ...prev, hasDiscount: false }))}
                 className="p-0.5 hover:bg-primary/20 rounded-full transition-colors cursor-pointer"
@@ -634,7 +688,7 @@ const ProductList = () => {
         )}
 
         {/* Empty / No results state */}
-        {!loading && !error && products.length === 0 && (
+        {!loading && !error && filteredProducts.length === 0 && (
           <CatalogEmpty
             variant={searchQuery || activeFilterCount > 0 ? 'noResults' : 'empty'}
             actionLabel={searchQuery || activeFilterCount > 0 ? 'Limpiar filtros' : undefined}
@@ -647,7 +701,7 @@ const ProductList = () => {
 
         {/* Product grid */}
         <Transition
-          show={!loading && !error && products.length > 0}
+          show={!loading && !error && filteredProducts.length > 0}
           appear={true}
           enter="transition-all duration-500 delay-150 ease-out"
           enterFrom="opacity-0 translate-y-6"
@@ -657,7 +711,7 @@ const ProductList = () => {
           leaveTo="opacity-0 -translate-y-6"
         >
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5 lg:gap-6">
-            {products.map((product) => (
+            {filteredProducts.map((product) => (
               <ProductCard key={product.id} {...product} />
             ))}
           </div>

@@ -24,6 +24,7 @@ import toast from "react-hot-toast";
 import { supabase } from "../utils/supabase";
 import { useCurrency } from "../context/CurrencyContext";
 import ProductsManager from "./ProductsManager";
+import PromotionsManager from "./PromotionsManager";
 import CategoriesManager from "./CategoriesManager";
 import OptionsManager from "./OptionsManager";
 import SettingsManager from "./SettingsManager";
@@ -72,9 +73,9 @@ const getStatusLabel = (estado) => {
 
 const ALLOWED_TRANSITIONS = {
   pendiente: ["preparar", "cancelado"],
-  preparar: ["en espera de retiro"],
+  preparar: ["en espera de retiro", "en camino", "cancelado"],
   "en espera de retiro": ["en camino", "finalizado", "cancelado"],
-  "en camino": ["finalizado"],
+  "en camino": ["finalizado", "cancelado"],
   finalizado: [],
   cancelado: [],
 };
@@ -419,6 +420,71 @@ const AdminDashboard = ({ onLogout, session }) => {
     window.open(waUrl, "_blank");
   };
 
+  const handleSendShippingDispatchMessage = (order) => {
+    // 1. Buscar la empresa de envío asignada al pedido
+    let company = shippingCompanies.find(
+      (c) => String(c.id) === String(order.compania_envio_id)
+    );
+
+    if (!company && order.compania_envio_nombre) {
+      company = shippingCompanies.find(
+        (c) => c.nombre?.toLowerCase() === order.compania_envio_nombre?.toLowerCase()
+      );
+    }
+
+    if (!company) {
+      toast.error(
+        "Debes seleccionar y guardar una compañía de envío en este pedido antes de notificar el despacho.",
+        { style: { background: "#18181b", color: "#fff", borderRadius: "12px" } }
+      );
+      return;
+    }
+
+    const companyPhone = company.telefono || company.contacto;
+    if (!companyPhone || !companyPhone.trim()) {
+      toast.error(
+        `La compañía de envío "${company.nombre}" no tiene número de teléfono registrado.`,
+        { style: { background: "#18181b", color: "#fff", borderRadius: "12px" } }
+      );
+      return;
+    }
+
+    // Limpiar teléfono del cliente
+    let clientePhone = order.whatsapp_cliente || "";
+    if (clientePhone.includes("|")) {
+      clientePhone = clientePhone.split("|")[1].trim();
+    }
+
+    // Extraer sucursales de los ítems del pedido
+    const sucursalesSet = new Set(
+      (order.items || [])
+        .map((i) => i.sucursal_nombre || i.sucursal?.nombre || "Sucursal Principal")
+        .filter(Boolean)
+    );
+    const sucursalesTexto = Array.from(sucursalesSet).join(", ");
+
+    let msg =
+      `🚚 *NUEVO VIAJE DISPONIBLE / SOLICITUD DE REPARTIDOR*\n\n` +
+      `Hola *${company.nombre}*, tenemos un pedido listo en almacén para ser retirado por su repartidor:\n\n` +
+      `📋 *Detalles del Envío:*\n` +
+      `• *Pedido:* #${order.id}\n` +
+      `• *Cliente:* ${order.nombre_cliente}\n` +
+      `• *Teléfono Cliente:* ${clientePhone}\n` +
+      `• *Dirección de Entrega:* ${order.direccion_entrega || "No especificada"}\n`;
+
+    if (order.gps_url) {
+      msg += `• *Ubicación GPS:* ${order.gps_url}\n`;
+    }
+
+    msg +=
+      `\n📍 *Sucursal de Retiro:* ${sucursalesTexto}\n\n` +
+      `Por favor, envíen a un repartidor para retirar el paquete y realizar la entrega al cliente. ¡Muchas gracias!`;
+
+    const normalizedPhone = normalizePhone(companyPhone);
+    const waUrl = `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(msg)}`;
+    window.open(waUrl, "_blank");
+  };
+
   // Cargar al montar el componente o al cambiar de tienda
   useEffect(() => {
     fetchOrders();
@@ -505,6 +571,21 @@ const AdminDashboard = ({ onLogout, session }) => {
           );
           if (confirmNotify) {
             handleSendReadyForPickupMessage({ ...order, estado: newStatus });
+          }
+        }, 300);
+      }
+
+      // Si pasa a "en espera de retiro" y es envío a domicilio, ofrecer notificar a la empresa de envío
+      if (
+        newStatus === "en espera de retiro" &&
+        order.metodo_entrega === "shipping"
+      ) {
+        setTimeout(() => {
+          const confirmNotify = window.confirm(
+            "¿Deseas enviar un mensaje por WhatsApp a la compañía de envío para solicitar un repartidor?",
+          );
+          if (confirmNotify) {
+            handleSendShippingDispatchMessage({ ...order, estado: newStatus });
           }
         }, 300);
       }
@@ -675,6 +756,16 @@ const AdminDashboard = ({ onLogout, session }) => {
               }`}
           >
             🍰 Productos
+          </button>
+          <button
+            onClick={() => setActiveTab("promotions")}
+            className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all shrink-0 active:scale-95 px-1
+              ${activeTab === "promotions"
+                ? "border-zinc-900 text-zinc-950 font-bold"
+                : "border-transparent text-zinc-400 hover:text-zinc-600"
+              }`}
+          >
+            🏷️ Promociones
           </button>
           <button
             onClick={() => setActiveTab("branches")}
@@ -1237,6 +1328,19 @@ const AdminDashboard = ({ onLogout, session }) => {
                                             💬 Notificar Retiro (WhatsApp)
                                           </button>
                                         )}
+                                      {order.estado === "en espera de retiro" &&
+                                        order.metodo_entrega === "shipping" && (
+                                          <button
+                                            onClick={() =>
+                                              handleSendShippingDispatchMessage(
+                                                order,
+                                              )
+                                            }
+                                            className="px-3.5 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all flex items-center gap-1.5 active:scale-95 shadow-sm hover:shadow"
+                                          >
+                                            💬 Solicitar Repartidor (WhatsApp)
+                                          </button>
+                                        )}
                                       {order.estado === "en camino" && (
                                         <button
                                           onClick={() =>
@@ -1478,6 +1582,7 @@ const AdminDashboard = ({ onLogout, session }) => {
         )}
 
         {activeTab === "products" && <ProductsManager />}
+        {activeTab === "promotions" && <PromotionsManager />}
         {activeTab === "branches" && <BranchesManager />}
         {activeTab === "inventory" && <BranchInventoryManager />}
         {activeTab === "categories" && <CategoriesManager />}
@@ -1497,12 +1602,8 @@ const AdminDashboard = ({ onLogout, session }) => {
           setPickedState={setPickedState}
           onRefreshOrders={fetchOrders}
           onCompletePicking={(orderToComplete) => {
-            const targetState =
-              orderToComplete.metodo_entrega === "pickup"
-                ? "en espera de retiro"
-                : "en camino";
             setActivePickingOrder(null);
-            handleUpdateStatus(orderToComplete.id, targetState);
+            handleUpdateStatus(orderToComplete.id, "en espera de retiro");
           }}
         />
       )}

@@ -78,6 +78,9 @@ export const exportProductsToCSV = (products, branchStockMap, branches, storeNam
  * Parsea una línea de CSV respetando comillas y caracteres de escape.
  */
 const parseCSVLine = (line, delimiter = ',') => {
+  if (delimiter === '\t') {
+    return line.split('\t').map(col => col.replace(/^"|"$/g, '').trim())
+  }
   const result = []
   let current = ''
   let inQuotes = false
@@ -145,12 +148,8 @@ export const parseProductsCSV = (csvText, existingProducts, branches) => {
     throw new Error('No se encontró la columna "SKU" obligatoria en el CSV.')
   }
 
-  // Mapear columnas de stock por sucursal
-  // Ejemplo: "Stock - Sucursal Principal" -> asociar a la sucursal correspondiente
-  const branchHeaderMap = [] // [ { branchId, branchName, colIndex } ]
-  
+  const branchHeaderMap = []
   branches.forEach(b => {
-    // Buscar columna que mencione el nombre o código de la sucursal
     const colIdx = headers.findIndex(h => {
       const hLower = h.toLowerCase()
       const bNameLower = b.nombre.toLowerCase()
@@ -167,7 +166,6 @@ export const parseProductsCSV = (csvText, existingProducts, branches) => {
     }
   })
 
-  // Mapa de productos existentes por SKU (case-insensitive)
   const productSkuMap = new Map()
   existingProducts.forEach(p => {
     if (p.sku) {
@@ -197,7 +195,6 @@ export const parseProductsCSV = (csvText, existingProducts, branches) => {
     const rowPresentacion = presentacionIdx !== -1 ? values[presentacionIdx] : undefined
     const rowOrigen = origenIdx !== -1 ? values[origenIdx] : undefined
 
-    // Extraer stocks por sucursal
     const branchStocks = {}
     let totalStockSum = 0
 
@@ -275,6 +272,284 @@ export const parseProductsCSV = (csvText, existingProducts, branches) => {
       total: parsedRows.length,
       toUpdate: countUpdate,
       omitted: countOmitted + countInvalid
+    }
+  }
+}
+
+/**
+ * Descarga una plantilla CSV de ejemplo para importar reglas de promoción.
+ */
+export const downloadPromotionRulesCSVTemplate = () => {
+  const headers = ['sku', 'cantidad_minima', 'cantidad_maxima', 'tipo_descuento', 'valor_descuento']
+  const sampleRows = [
+    ['RTR-044-RE', '10', '19', 'porcentaje', '10'],
+    ['RTR-044-RE', '20', '', 'porcentaje', '15'],
+    ['ACE-4T-1L', '1', '', 'monto_fijo', '2.50'],
+  ]
+  const content = '\uFEFF' + [headers.join(','), ...sampleRows.map(r => r.join(','))].join('\r\n')
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  const url = URL.createObjectURL(blob)
+  link.setAttribute('href', url)
+  link.setAttribute('download', 'plantilla_reglas_promocion.csv')
+  link.style.visibility = 'hidden'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * Parsea e inspecciona un archivo CSV de reglas de promoción.
+ */
+export const parsePromotionRulesCSV = (csvText, existingProducts = []) => {
+  if (!csvText || !csvText.trim()) {
+    throw new Error('El archivo CSV está vacío.')
+  }
+
+  // Limpiar BOM UTF-8 si existe
+  let cleanText = csvText
+  if (cleanText.charCodeAt(0) === 0xFEFF) {
+    cleanText = cleanText.slice(1)
+  }
+
+  const lines = cleanText
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l.length > 0)
+
+  if (lines.length < 1) {
+    throw new Error('El archivo CSV no contiene líneas válidas.')
+  }
+
+  const firstLine = lines[0]
+  const tabCount = (firstLine.match(/\t/g) || []).length
+  const semicolonCount = (firstLine.match(/;/g) || []).length
+  const commaCount = (firstLine.match(/,/g) || []).length
+
+  let delimiter = ','
+  if (tabCount >= semicolonCount && tabCount >= commaCount && tabCount > 0) {
+    delimiter = '\t'
+  } else if (semicolonCount > commaCount) {
+    delimiter = ';'
+  }
+
+  const rawHeaders = parseCSVLine(firstLine, delimiter)
+  const headers = rawHeaders.map(h => h.replace(/^"|"$/g, '').toLowerCase().trim())
+
+  // Helpers de conversión de números flexibles (reemplaza coma por punto, remueve $, %, espacios)
+  const parseFlexibleFloat = (valStr) => {
+    if (valStr === null || valStr === undefined || String(valStr).trim() === '') return NaN
+    const cleaned = String(valStr)
+      .replace(/[\$%€\u00A0\s]/g, '')
+      .replace(',', '.')
+      .trim()
+    return parseFloat(cleaned)
+  }
+
+  const parseFlexibleInt = (valStr) => {
+    const f = parseFlexibleFloat(valStr)
+    return isNaN(f) ? NaN : Math.floor(f)
+  }
+
+  // Detección si la primera fila son encabezados o datos reales
+  const hasExplicitHeaders = headers.some(h =>
+    h === 'sku' ||
+    h === 'codigo' ||
+    h === 'código' ||
+    h.includes('descuento') ||
+    h.includes('valor') ||
+    h.includes('monto') ||
+    h.includes('min') ||
+    h.includes('max') ||
+    h.includes('tipo')
+  )
+
+  // Resolver índices de columnas por nombre o por posición
+  let targetSkuIdx = headers.findIndex(h =>
+    h === 'sku' ||
+    h === 'codigo' ||
+    h === 'código' ||
+    h.includes('barcode') ||
+    h.includes('barra') ||
+    h.includes('referencia') ||
+    h.includes('producto')
+  )
+  let minQtyIdx = headers.findIndex(h => h.includes('min') || h.includes('cantidad_minima'))
+  let maxQtyIdx = headers.findIndex(h => h.includes('max') || h.includes('cantidad_maxima'))
+
+  let discountTypeIdx = headers.findIndex(h =>
+    h === 'tipo' || h === 'tipo_descuento' || h === 'tipo_de_descuento' || h === 'type' || h.includes('tipo')
+  )
+
+  let discountValIdx = headers.findIndex((h, idx) =>
+    idx !== discountTypeIdx && (
+      h === 'valor_descuento' ||
+      h === 'valor' ||
+      h === 'descuento' ||
+      h === 'monto' ||
+      h === 'porcentaje' ||
+      h === '%' ||
+      h.includes('valor') ||
+      h.includes('monto') ||
+      (h.includes('descuento') && !h.includes('tipo')) ||
+      (h.includes('porcentaje') && !h.includes('tipo')) ||
+      h.includes('value') ||
+      h.includes('amount') ||
+      h.includes('rate') ||
+      h.includes('precio')
+    )
+  )
+
+  // Fallbacks posicionales según la cantidad total de columnas del CSV
+  const colCount = rawHeaders.length
+  if (colCount >= 5) {
+    if (minQtyIdx === -1) minQtyIdx = 1
+    if (maxQtyIdx === -1) maxQtyIdx = 2
+    if (discountTypeIdx === -1) discountTypeIdx = 3
+    if (discountValIdx === -1) discountValIdx = 4
+  } else if (colCount === 4) {
+    if (minQtyIdx === -1) minQtyIdx = 1
+    if (discountTypeIdx === -1) discountTypeIdx = 2
+    if (discountValIdx === -1) discountValIdx = 3
+  } else if (colCount === 3) {
+    if (minQtyIdx === -1) minQtyIdx = 1
+    if (discountValIdx === -1) discountValIdx = 2
+  } else if (colCount === 2) {
+    if (discountValIdx === -1) discountValIdx = 1
+  } else if (colCount === 1) {
+    if (discountValIdx === -1) discountValIdx = 0
+  }
+
+  const startLineIndex = hasExplicitHeaders ? 1 : 0
+
+  // Helpers de normalización de código
+  const cleanCode = (str) => {
+    if (str === null || str === undefined) return ''
+    let val = String(str)
+      .replace(/[\u00A0\u1680\u180E\u2000-\u200B\u202F\u205F\u3000\uFEFF]/g, '')
+      .replace(/^"|"$/g, '')
+      .trim()
+    if (val.endsWith('.0')) {
+      val = val.slice(0, -2)
+    }
+    return val.toLowerCase()
+  }
+
+  const stripNonAlphaNum = (str) => {
+    return cleanCode(str).replace(/[^a-z0-9]/g, '')
+  }
+
+  // Indexar los productos por CUALQUIERA de sus propiedades de código
+  const productSkuMap = new Map()
+
+  existingProducts.forEach(p => {
+    if (!p) return
+    const candidateFields = [
+      p.sku,
+      p.barcode,
+      p.codigo_barra,
+      p.codigo,
+      p.codigo_producto,
+      p.oem_number,
+      p.part_number_fabricante,
+      p.id
+    ]
+
+    candidateFields.forEach(val => {
+      if (val !== null && val !== undefined && String(val).trim() !== '') {
+        const c1 = cleanCode(val)
+        const c2 = stripNonAlphaNum(val)
+        if (c1) productSkuMap.set(c1, p)
+        if (c2) productSkuMap.set(c2, p)
+      }
+    })
+  })
+
+  const parsedRows = []
+  let validCount = 0
+  let errorCount = 0
+
+  for (let i = startLineIndex; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i], delimiter)
+    const rawRowSku = values[targetSkuIdx] ? values[targetSkuIdx].replace(/^"|"$/g, '').trim() : ''
+    const cleanedRowSku = cleanCode(rawRowSku)
+    const strippedRowSku = stripNonAlphaNum(rawRowSku)
+
+    const rowMinQtyStr = minQtyIdx !== -1 && values[minQtyIdx] !== undefined ? values[minQtyIdx] : '1'
+    const rowMaxQtyStr = maxQtyIdx !== -1 && values[maxQtyIdx] !== undefined ? values[maxQtyIdx] : ''
+    const rowTypeStr = discountTypeIdx !== -1 && values[discountTypeIdx] !== undefined ? values[discountTypeIdx] : 'porcentaje'
+    const rowValStr = discountValIdx !== -1 && values[discountValIdx] !== undefined ? values[discountValIdx] : ''
+
+    const minQty = parseFlexibleInt(rowMinQtyStr)
+    const finalMinQty = isNaN(minQty) || minQty < 1 ? 1 : minQty
+    const maxQty = rowMaxQtyStr ? parseFlexibleInt(rowMaxQtyStr) : null
+    const finalMaxQty = isNaN(maxQty) ? null : maxQty
+
+    const valorDescuento = parseFlexibleFloat(rowValStr)
+
+    const cleanType = String(rowTypeStr).toLowerCase().includes('monto') || String(rowTypeStr).toLowerCase().includes('fijo') || String(rowTypeStr).includes('$')
+      ? 'monto_fijo'
+      : 'porcentaje'
+
+    const matchedProduct = productSkuMap.get(cleanedRowSku) || productSkuMap.get(strippedRowSku)
+
+    let isValid = true
+    let reason = ''
+
+    if (!rawRowSku) {
+      isValid = false
+      reason = 'Falta el código SKU'
+    } else if (!matchedProduct) {
+      isValid = false
+      reason = `SKU/Código "${rawRowSku}" no coincide con ningún producto del catálogo`
+    } else if (isNaN(valorDescuento) || valorDescuento <= 0) {
+      isValid = false
+      reason = 'El valor del descuento debe ser un número mayor a 0'
+    } else if (finalMaxQty !== null && finalMaxQty < finalMinQty) {
+      isValid = false
+      reason = 'Cantidad máxima debe ser mayor o igual a la mínima'
+    }
+
+    if (isValid) {
+      validCount++
+      const skuToSave = matchedProduct.sku || matchedProduct.codigo_barra || matchedProduct.barcode || rawRowSku
+      parsedRows.push({
+        lineIndex: i + 1,
+        sku: skuToSave,
+        rawSkuUploaded: rawRowSku,
+        productName: matchedProduct.name,
+        productId: matchedProduct.id,
+        cantidad_minima: finalMinQty,
+        cantidad_maxima: finalMaxQty,
+        tipo_descuento: cleanType,
+        valor_descuento: valorDescuento,
+        status: 'valid',
+        reason: 'Válido para insertar'
+      })
+    } else {
+      errorCount++
+      parsedRows.push({
+        lineIndex: i + 1,
+        sku: rawRowSku || 'SIN SKU',
+        rawSkuUploaded: rawRowSku,
+        productName: matchedProduct ? matchedProduct.name : '-',
+        cantidad_minima: finalMinQty,
+        cantidad_maxima: finalMaxQty,
+        tipo_descuento: cleanType,
+        valor_descuento: isNaN(valorDescuento) ? 0 : valorDescuento,
+        status: 'error',
+        reason
+      })
+    }
+  }
+
+  return {
+    rows: parsedRows,
+    summary: {
+      total: parsedRows.length,
+      valid: validCount,
+      errors: errorCount
     }
   }
 }

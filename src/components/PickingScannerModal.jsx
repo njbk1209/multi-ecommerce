@@ -31,6 +31,7 @@ export default function PickingScannerModal({
   onRefreshOrders,
 }) {
   const [manualCode, setManualCode] = useState("");
+  const [scanQty, setScanQty] = useState(1);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -226,9 +227,10 @@ export default function PickingScannerModal({
   }, []);
 
   // Procesar código escaneado con persistencia directa en Supabase
-  const processScannedBarcode = async (rawCode) => {
+  const processScannedBarcode = async (rawCode, incrementAmount = scanQty) => {
     if (!rawCode) return;
     const cleanCode = rawCode.trim().toLowerCase();
+    const qtyToAdd = Math.max(1, parseInt(incrementAmount, 10) || 1);
 
     // Buscar ítem en el pedido (por barcode o sku)
     const matchingItem = items.find((item) => {
@@ -262,7 +264,8 @@ export default function PickingScannerModal({
       return;
     }
 
-    const nextQty = currentQty + 1;
+    const nextQty = Math.min(matchingItem.cantidad, currentQty + qtyToAdd);
+    const addedActual = nextQty - currentQty;
 
     // Actualización optimista del estado local
     setPickedState((prev) => ({
@@ -274,6 +277,7 @@ export default function PickingScannerModal({
     }));
 
     setManualCode("");
+    setScanQty(1);
 
     // PERSISTIR EN SUPABASE (public.pedido_item)
     try {
@@ -289,7 +293,7 @@ export default function PickingScannerModal({
     }
 
     // Notificaciones y Sonido Feedback
-    const newTotalPicked = totalPickedQty + 1;
+    const newTotalPicked = totalPickedQty + addedActual;
     const newIsComplete = newTotalPicked >= totalTargetQty;
 
     if (newIsComplete) {
@@ -313,7 +317,7 @@ export default function PickingScannerModal({
     } else {
       if (soundEnabled) playSuccessBeep();
       toast.success(
-        `✓ ${matchingItem.nombre_producto} (+1) [${nextQty}/${matchingItem.cantidad}]`,
+        `✓ ${matchingItem.nombre_producto} (+${addedActual}) [${nextQty}/${matchingItem.cantidad}]`,
         {
           duration: 2500,
           style: { background: "#18181b", color: "#fff", borderRadius: "12px" },
@@ -327,7 +331,7 @@ export default function PickingScannerModal({
   const handleManualSubmit = (e) => {
     e.preventDefault();
     if (manualCode.trim()) {
-      processScannedBarcode(manualCode);
+      processScannedBarcode(manualCode, scanQty);
     }
   };
 
@@ -533,7 +537,7 @@ export default function PickingScannerModal({
 
           {/* INPUT MANUAL Y BOTONES DE ESCANEO */}
           <div className="flex flex-col sm:flex-row gap-2">
-            <form onSubmit={handleManualSubmit} className="flex-1 flex gap-2">
+            <form onSubmit={handleManualSubmit} className="flex-1 flex gap-2 items-center">
               <div className="relative flex-1">
                 <Barcode className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
@@ -541,10 +545,27 @@ export default function PickingScannerModal({
                   type="text"
                   value={manualCode}
                   placeholder="Escanea con pistola o ingresa código/SKU..."
-                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-zinc-200 focus:border-zinc-950 focus:ring-1 focus:ring-zinc-950 outline-none text-xs font-mono font-semibold transition-all"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 focus:border-zinc-950 focus:ring-1 focus:ring-zinc-950 outline-none text-xs font-mono font-semibold transition-all"
                   onChange={(e) => setManualCode(e.target.value)}
                 />
               </div>
+
+              {/* CAMPO DE CANTIDAD DE ESCANEO MASIVO */}
+              <div className="flex items-center gap-1.5 bg-zinc-100 border border-zinc-200 rounded-xl px-2.5 py-1.5 shrink-0">
+                <span className="text-[11px] font-bold text-zinc-600 uppercase">Cant:</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={scanQty}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    setScanQty(isNaN(val) || val < 1 ? 1 : val);
+                  }}
+                  className="w-14 py-1 text-center font-mono font-bold text-xs bg-white border border-zinc-300 rounded-lg outline-none focus:ring-2 focus:ring-zinc-950"
+                  title="Cantidad a sumar en el escaneo"
+                />
+              </div>
+
               <button
                 type="submit"
                 className="px-4 py-2.5 bg-zinc-950 hover:bg-zinc-800 text-white text-xs font-semibold rounded-xl transition-all active:scale-95 shrink-0"

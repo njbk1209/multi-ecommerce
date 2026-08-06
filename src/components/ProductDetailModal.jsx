@@ -1,15 +1,16 @@
 import React, { Fragment, useState, useEffect, useMemo } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
-import { X, ShoppingBag, Check, AlertCircle, Tag, ShieldCheck, Truck, Plus, Minus, Building2 } from 'lucide-react'
+import { X, ShoppingBag, Check, AlertCircle, Tag, ShieldCheck, Truck, Plus, Minus, Building2, Sparkles, Percent } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useCart } from '../context/CartContext'
 import { useCurrency } from '../context/CurrencyContext'
 import { supabase } from '../utils/supabase'
 import { sortBranchesByProximity } from '../utils/geo'
+import { evaluarPromocionProducto, esPromocionVigente } from '../utils/promotionEngine'
 
 const ProductDetailModal = ({ isOpen, onClose, product }) => {
   const { addToCart } = useCart()
-  const { isBS, currency, exchangeRate, store } = useCurrency()
+  const { isBS, currency, exchangeRate, store, promotions } = useCurrency()
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [quantity, setQuantity] = useState(1)
@@ -93,6 +94,31 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
     setComment('')
   }, [isOpen, product])
 
+  // Extraer las reglas de promoción aplicables a este producto (Hook ejecutado incondicionalmente)
+  const matchingPromoRules = useMemo(() => {
+    if (!product || !Array.isArray(promotions)) return []
+    const skuVal = (product.sku || product.codigo_barra || '').trim().toLowerCase()
+    const catVal = String(product.category_id || product.category || '')
+
+    const rules = []
+    for (const promo of promotions) {
+      if (!esPromocionVigente(promo)) continue
+      const regList = promo.promocion_regla || promo.reglas || []
+      for (const r of regList) {
+        const matchSku = skuVal && r.sku && String(r.sku).trim().toLowerCase() === skuVal
+        const matchCat = catVal && r.category_id && String(r.category_id) === catVal
+        if (matchSku || matchCat) {
+          rules.push({
+            promoNombre: promo.nombre,
+            tipoPromo: promo.tipo,
+            ...r
+          })
+        }
+      }
+    }
+    return rules.sort((a, b) => (a.cantidad_minima || 1) - (b.cantidad_minima || 1))
+  }, [product, promotions])
+
   // Geolocalizar y asignar la sucursal más cercana CON STOCK
   const handleGeolocateBranch = () => {
     if (!navigator.geolocation) {
@@ -126,24 +152,6 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
   // Todos los Hooks deben ejecutarse antes de cualquier early return
   if (!isOpen || !product) return null
 
-  const selectedSucursalObj = sucursales.find((s) => s.id.toString() === selectedSucursalId) || null
-
-  const isOutOfStock = (product.stock ?? 0) <= 0
-  const images = product.images?.length ? product.images : []
-  const currentImage = images[selectedImageIndex]?.image || product.image || null
-
-  const isNew = () => {
-    if (!product.date_added && !product.created_at) return false
-    const date = product.date_added || product.created_at
-    const diffDays = (new Date() - new Date(date)) / (1000 * 60 * 60 * 24)
-    return diffDays <= 7
-  }
-
-  const optionGroups = product.optionGroups || []
-  const hasModifiers = product.hasModifiers || optionGroups.length > 0
-  const precioPorTamano = product.precio_por_tamano
-
-  // Agrupar sucursales y su stock por Ciudad (ordenados por sucursal)
   const sortedSucursales = [...sucursales].sort((a, b) =>
     (a.nombre || '').localeCompare(b.nombre || '')
   )
@@ -164,6 +172,21 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
 
     return acc
   }, {})
+
+  const isOutOfStock = (product.stock ?? 0) <= 0
+  const images = product.images?.length ? product.images : []
+  const currentImage = images[selectedImageIndex]?.image || product.image || null
+
+  const isNew = () => {
+    if (!product.date_added && !product.created_at) return false
+    const date = product.date_added || product.created_at
+    const diffDays = (new Date() - new Date(date)) / (1000 * 60 * 60 * 24)
+    return diffDays <= 7
+  }
+
+  const optionGroups = product.optionGroups || []
+  const hasModifiers = product.hasModifiers || optionGroups.length > 0
+  const precioPorTamano = product.precio_por_tamano
 
   // Selector de opciones
   const handleOptionSelect = (group, value) => {
@@ -219,17 +242,27 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
     return false
   }
 
-  // Cálculo de precio
-  const basePrice = precioPorTamano ? 0 : parseFloat(product.price) || 0
-  const baseComparePrice = precioPorTamano ? 0 : parseFloat(product.compare_price) || 0
+  // Cálculo de modificadores y precios base
   const selectedOptionsFlat = Object.values(selectedOptions).flat()
-
   const modifiersTotal = selectedOptionsFlat.reduce(
     (sum, opt) => sum + (parseFloat(opt.price_modifier) || 0),
     0
   )
-  const unitPriceUSD = basePrice + modifiersTotal
+  const basePriceUSD = (precioPorTamano ? 0 : parseFloat(product.price) || 0) + modifiersTotal
 
+  // Evaluador de Promociones dinámicas según la cantidad actual (quantity)
+  const productForPromo = {
+    ...product,
+    price: basePriceUSD,
+    sku: product.sku || product.codigo_barra || null,
+    category_id: product.category_id || product.category || null
+  }
+  const promoInfo = evaluarPromocionProducto(productForPromo, quantity, promotions)
+
+  // Precio unitario efectivo tras aplicar promoción
+  const effectiveUnitPriceUSD = promoInfo.tienePromocion ? promoInfo.precioFinal : basePriceUSD
+
+  const baseComparePrice = precioPorTamano ? 0 : parseFloat(product.compare_price) || 0
   const modifiersCompareTotal = selectedOptionsFlat.reduce((sum, opt) => {
     const compVal = opt.price_compare_modifier !== null && opt.price_compare_modifier !== undefined
       ? opt.price_compare_modifier
@@ -237,17 +270,20 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
     return sum + (parseFloat(compVal) || 0)
   }, 0)
 
-  const unitComparePriceUSD = (baseComparePrice > 0 || selectedOptionsFlat.some(o => o.price_compare_modifier !== null))
-    ? (baseComparePrice || basePrice) + modifiersCompareTotal
-    : null
+  const effectiveComparePriceUSD = promoInfo.tienePromocion
+    ? basePriceUSD
+    : ((baseComparePrice > 0 || selectedOptionsFlat.some(o => o.price_compare_modifier !== null))
+      ? (baseComparePrice || (basePriceUSD - modifiersTotal)) + modifiersCompareTotal
+      : null)
 
   const exchange = exchangeRate || 1
-  const unitPriceBS = unitPriceUSD * exchange
-  const unitComparePriceBS = unitComparePriceUSD ? unitComparePriceUSD * exchange : null
+  const unitPriceBS = effectiveUnitPriceUSD * exchange
+  const unitComparePriceBS = effectiveComparePriceUSD ? effectiveComparePriceUSD * exchange : null
 
-  const activeUnitPrice = isBS ? unitPriceBS : unitPriceUSD
-  const activeComparePrice = isBS ? unitComparePriceBS : unitComparePriceUSD
+  const activeUnitPrice = isBS ? unitPriceBS : effectiveUnitPriceUSD
+  const activeComparePrice = isBS ? unitComparePriceBS : effectiveComparePriceUSD
   const symbol = isBS ? 'Bs' : '$'
+
 
   const formatPrice = (val) =>
     val != null
@@ -255,6 +291,7 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
       : '0.00'
 
   const targetBranchId = selectedSucursalId || (sucursales.length === 1 ? sucursales[0]?.id : null)
+  const selectedSucursalObj = sucursales.find((s) => s.id?.toString() === targetBranchId?.toString()) || null
   const selectedBranchStockInfo = targetBranchId ? getBranchStockInfo(targetBranchId) : null
   const isSelectedBranchOutOfStock = targetBranchId
     ? (!selectedBranchStockInfo?.isAvailable || (selectedBranchStockInfo?.stock ?? 0) < quantity)
@@ -280,9 +317,9 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
       id: product.id,
       name: product.name,
       stock: selectedBranchStockInfo?.stock ?? product.stock,
-      price: unitPriceUSD,
-      compare_price: unitComparePriceUSD,
-      price_bs: unitPriceBS,
+      price: basePriceUSD,
+      compare_price: effectiveComparePriceUSD,
+      price_bs: basePriceUSD * exchange,
       compare_price_bs: unitComparePriceBS,
       image: currentImage,
       precio_por_tamano: product.precio_por_tamano,
@@ -290,9 +327,10 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
       ciudad: selectedSucursalObj?.ciudad || product.ciudad,
       sucursal_id: selectedSucursalObj?.id,
       sucursal: selectedSucursalObj,
-      sku: product.sku || null,
-      barcode: product.barcode || product.codigo_barra || null,
-      codigo_barra: product.codigo_barra || product.barcode || null,
+      sku: product.sku || product.codigo_barra || product.barcode || null,
+      barcode: product.barcode || product.codigo_barra || product.sku || null,
+      codigo_barra: product.codigo_barra || product.barcode || product.sku || null,
+      category_id: product.category_id || product.category || null,
     }
     const success = addToCart(productData, selectedOptionsFlat, comment, quantity)
     if (success !== false) {
@@ -346,7 +384,13 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
                           ¡Nuevo!
                         </span>
                       )}
-                      {product.discount_percent > 0 && !isOutOfStock && (
+                      {promoInfo.tienePromocion && !isOutOfStock && (
+                        <span className="bg-emerald-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-md tracking-wider flex items-center gap-1 animate-bounce">
+                          <Tag className="w-3.5 h-3.5" />
+                          {promoInfo.badgeText}
+                        </span>
+                      )}
+                      {product.discount_percent > 0 && !isOutOfStock && !promoInfo.tienePromocion && (
                         <span className="bg-emerald-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-md tracking-wider">
                           -{product.discount_percent}% OFF
                         </span>
@@ -406,7 +450,7 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
                         </span>
                         {product.sku && (
                           <span className="text-xs text-gray-400 font-mono">
-                            Ref: {product.sku}
+                            Ref / SKU: {product.sku}
                           </span>
                         )}
                       </div>
@@ -425,30 +469,70 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
                         </div>
                       )}
 
-                      {/* Precio y Moneda */}
-                      <div className="flex items-baseline gap-3 py-1">
+                      {/* Precio y Moneda con Promoción */}
+                      <div className="flex items-baseline gap-3 py-1 flex-wrap">
                         <span className="text-2xl sm:text-3xl font-extrabold text-primary">
                           {precioPorTamano && 'Desde '}
                           {formatPrice(activeUnitPrice)} {symbol}
                         </span>
 
                         {activeComparePrice && activeComparePrice > activeUnitPrice && (
-                          <span className="text-base text-gray-400 line-through">
+                          <span className="text-base text-gray-400 line-through decoration-red-400">
                             {formatPrice(activeComparePrice)} {symbol}
+                          </span>
+                        )}
+
+                        {promoInfo.tienePromocion && (
+                          <span className="text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-full">
+                            ¡Ahorras {formatPrice(isBS ? promoInfo.montoDescuentoUnitario * exchange : promoInfo.montoDescuentoUnitario)} {symbol} por unidad!
                           </span>
                         )}
 
                         {!isBS && exchangeRate && (
                           <span className="text-xs text-gray-400 ml-auto bg-gray-100 px-2.5 py-1 rounded-full font-medium">
-                            ≈ {(unitPriceUSD * exchangeRate).toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs
+                            ≈ {(effectiveUnitPriceUSD * exchangeRate).toLocaleString('es-VE', { minimumFractionDigits: 2 })} Bs
                           </span>
                         )}
                       </div>
 
+                      {/* CUADRO DE REGLAS DE PROMOCIÓN POR VOLUMEN (Si aplica al SKU) */}
+                      {matchingPromoRules.length > 0 && (
+                        <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3.5 space-y-2">
+                          <div className="flex items-center gap-1.5 text-emerald-900 font-bold text-xs">
+                            <Sparkles className="w-4 h-4 text-emerald-600" />
+                            <span>Descuentos Especiales por Cantidad:</span>
+                          </div>
+                          <div className="grid grid-cols-1 gap-1.5">
+                            {matchingPromoRules.map((rule, idx) => {
+                              const isTierActive = quantity >= rule.cantidad_minima && (!rule.cantidad_maxima || quantity <= rule.cantidad_maxima)
+                              return (
+                                <div
+                                  key={rule.id || idx}
+                                  className={`flex items-center justify-between text-xs px-3 py-1.5 rounded-xl border transition-all ${
+                                    isTierActive
+                                      ? 'bg-emerald-600 text-white font-bold border-emerald-700 shadow-xs scale-[1.01]'
+                                      : 'bg-white text-slate-700 border-emerald-100 hover:border-emerald-300'
+                                  }`}
+                                >
+                                  <span>
+                                    Llevando {rule.cantidad_minima}{rule.cantidad_maxima ? ` a ${rule.cantidad_maxima}` : '+'} unidades
+                                  </span>
+                                  <span className="flex items-center gap-1">
+                                    {rule.tipo_descuento === 'porcentaje'
+                                      ? `-${rule.valor_descuento}% OFF`
+                                      : `-$${rule.valor_descuento} USD`}
+                                    {isTierActive && <Check className="w-3.5 h-3.5 ml-1" />}
+                                  </span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
-
-                      {/* BLOQUE DE ACCIÓN: SELECTOR DE SUCURSAL, CANTIDAD Y BOTÓN AGREGAR AL CARRITO */}
-                      <div className="pt-3 border-t border-gray-100 space-y-3.5">
+                    {/* BLOQUE DE ACCIÓN: SELECTOR DE SUCURSAL, CANTIDAD Y BOTÓN AGREGAR AL CARRITO */}
+                    <div className="pt-3 border-t border-gray-100 space-y-3.5">
                         {/* Selector de Sucursal */}
                         {sucursales.length > 0 && (
                           <div className="space-y-1.5">
@@ -686,8 +770,7 @@ const ProductDetailModal = ({ isOpen, onClose, product }) => {
                       )}
                     </div>
                   </div>
-                </div>
-              </Dialog.Panel>
+                </Dialog.Panel>
             </Transition.Child>
           </div>
         </div>

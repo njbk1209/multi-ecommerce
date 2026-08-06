@@ -1,12 +1,13 @@
 import React, { Fragment, useState, useEffect } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
-import { X, Tag, Percent, DollarSign, PackageCheck, SlidersHorizontal, RotateCcw } from 'lucide-react'
+import { X, Tag, Percent, DollarSign, PackageCheck, SlidersHorizontal, RotateCcw, Sparkles } from 'lucide-react'
 import HierarchicalVehicleTree from './HierarchicalVehicleTree'
 
 const CatalogFilters = ({
   isOpen,
   onClose,
   categoryTree = [],
+  promotions = [],
   filters,
   onFiltersChange,
   onApply,
@@ -42,6 +43,7 @@ const CatalogFilters = ({
     const cleared = {
       categories: [],
       hasDiscount: false,
+      selectedPromoId: '',
       priceMin: '',
       priceMax: '',
       inStockOnly: false,
@@ -138,9 +140,9 @@ const CatalogFilters = ({
                         </div>
                       </div>
 
-                      {/* Descuentos */}
-                      <div className="pt-2 border-t border-gray-100">
-                        <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-primary-dark mb-3.5">
+                      {/* Descuentos y Promociones Dinámicas */}
+                      <div className="pt-2 border-t border-gray-100 space-y-3">
+                        <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-primary-dark">
                           <Percent className="w-4 h-4 text-primary" />
                           Ofertas & Promociones
                         </h4>
@@ -152,9 +154,49 @@ const CatalogFilters = ({
                             className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary-dark transition-colors"
                           />
                           <span className="text-sm font-medium text-gray-700 group-hover:text-primary-dark transition-colors">
-                            Solo productos con descuento
+                            Solo productos en oferta o con promoción
                           </span>
                         </label>
+
+                        {/* Lista de Promociones Creadas en el Admin */}
+                        {promotions && promotions.length > 0 && (
+                          <div className="pt-2 space-y-1.5">
+                            <label className="text-[11px] font-bold text-gray-500 uppercase tracking-wide flex items-center gap-1">
+                              <Sparkles className="w-3 h-3 text-amber-500" />
+                              Promociones Específicas:
+                            </label>
+                            <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
+                              <button
+                                type="button"
+                                onClick={() => setLocal(prev => ({ ...prev, selectedPromoId: '' }))}
+                                className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                                  !local.selectedPromoId
+                                    ? 'bg-primary-light text-primary-dark font-bold border border-primary'
+                                    : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
+                                }`}
+                              >
+                                Todas las promociones
+                              </button>
+                              {promotions.map((p) => (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => setLocal(prev => ({ ...prev, selectedPromoId: p.id }))}
+                                  className={`w-full text-left px-3 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center justify-between ${
+                                    String(local.selectedPromoId) === String(p.id)
+                                      ? 'bg-amber-100 text-amber-900 font-bold border border-amber-300'
+                                      : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-200'
+                                  }`}
+                                >
+                                  <span className="truncate">{p.nombre}</span>
+                                  <span className="text-[9px] bg-amber-200/60 px-1.5 py-0.5 rounded font-mono shrink-0">
+                                    {p.tipo === 'campana' ? '🎉 Evento' : '📦 Volumen'}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Rango de Precios */}

@@ -11,8 +11,26 @@ export const CurrencyProvider = ({ children }) => {
   const [currency, setCurrency] = useState("USD");
   const [exchangeRate, setExchangeRate] = useState(null);
   const [store, setStore] = useState(null);
+  const [promotions, setPromotions] = useState([]);
 
   const isBS = currency === "BS";
+
+  const fetchPromotions = async (storeId) => {
+    if (!storeId) return;
+    try {
+      const { data, error } = await supabase
+        .from("promocion")
+        .select("*, promocion_regla(*)")
+        .eq("store_id", storeId)
+        .eq("is_active", true);
+
+      if (!error && data) {
+        setPromotions(data);
+      }
+    } catch (err) {
+      console.error("Error al obtener promociones de Supabase:", err);
+    }
+  };
 
   useEffect(() => {
     const fetchStoreAndRate = async () => {
@@ -28,6 +46,10 @@ export const CurrencyProvider = ({ children }) => {
 
           if (storeError) throw storeError;
           setStore(storeData);
+
+          if (storeData) {
+            await fetchPromotions(storeData.id);
+          }
         }
 
         // 2. Obtener tasa de cambio
@@ -49,7 +71,7 @@ export const CurrencyProvider = ({ children }) => {
     fetchStoreAndRate();
   }, []);
 
-  // Actualizar metadatos de la página (título, meta descripción, favicon) sin inyectar variables de estilo CSS dinámicas
+  // Actualizar metadatos de la página
   useEffect(() => {
     if (store) {
       const pageTitle = store.comercial_name
@@ -62,7 +84,6 @@ export const CurrencyProvider = ({ children }) => {
         metaDesc.setAttribute("content", store.descripcion);
       }
 
-      // Etiquetas Open Graph (Redes Sociales)
       const ogTitle = document.querySelector('meta[property="og:title"]');
       if (ogTitle && store.comercial_name) {
         ogTitle.setAttribute("content", store.comercial_name);
@@ -88,7 +109,15 @@ export const CurrencyProvider = ({ children }) => {
 
   return (
     <CurrencyContext.Provider
-      value={{ currency, setCurrency, isBS, exchangeRate, store }}
+      value={{
+        currency,
+        setCurrency,
+        isBS,
+        exchangeRate,
+        store,
+        promotions,
+        refetchPromotions: () => fetchPromotions(store?.id)
+      }}
     >
       {children}
     </CurrencyContext.Provider>
@@ -96,3 +125,4 @@ export const CurrencyProvider = ({ children }) => {
 };
 
 export const useCurrency = () => useContext(CurrencyContext);
+

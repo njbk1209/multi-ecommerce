@@ -36,7 +36,11 @@ import ShippingCompaniesManager from "./ShippingCompaniesManager";
 
 const normalizePhone = (phone) => {
   if (!phone) return "";
-  let cleaned = phone.replace(/\D/g, "");
+  let rawPhone = phone;
+  if (rawPhone.includes("|")) {
+    rawPhone = rawPhone.split("|")[1].trim();
+  }
+  let cleaned = rawPhone.replace(/\D/g, "");
   if (cleaned.startsWith("0")) {
     cleaned = "58" + cleaned.substring(1);
   }
@@ -275,11 +279,27 @@ const AdminDashboard = ({ onLogout, session }) => {
 
       mensaje += `*Resumen del Pedido:*\n`;
       (order.items || []).forEach((item) => {
+        const unitPriceUSD =
+          parseFloat(item.precio_unitario) ||
+          parseFloat(item.unit_price) ||
+          parseFloat(item.precio) ||
+          (item.monto_total && item.cantidad ? parseFloat(item.monto_total) / item.cantidad : 0);
+
         let itemStr = `• ${item.cantidad}x ${item.nombre_producto}`;
         if (item.opciones_seleccionadas && item.opciones_seleccionadas.length > 0) {
           const opts = item.opciones_seleccionadas.map((o) => o.nombre).join(", ");
           itemStr += ` (${opts})`;
         }
+
+        if (unitPriceUSD > 0) {
+          if (isBs) {
+            const unitBs = unitPriceUSD * rate;
+            itemStr += ` (${unitPriceUSD.toFixed(2)} $ / ${unitBs.toFixed(2)} Bs c/u)`;
+          } else {
+            itemStr += ` ($${unitPriceUSD.toFixed(2)} c/u)`;
+          }
+        }
+
         mensaje += `${itemStr}\n`;
       });
 
@@ -1041,13 +1061,13 @@ const AdminDashboard = ({ onLogout, session }) => {
                             {order.nombre_cliente}
                           </p>
                           <a
-                            href={`https://wa.me/${order.whatsapp_cliente}`}
+                            href={`https://wa.me/${normalizePhone(order.whatsapp_cliente)}`}
                             target="_blank"
                             rel="noreferrer"
                             onClick={(e) => e.stopPropagation()}
                             className="text-xs text-zinc-500 hover:text-zinc-900 transition-colors flex items-center gap-1 font-medium"
                           >
-                            <Phone className="w-3 h-3 text-zinc-400" />+
+                            <Phone className="w-3 h-3 text-zinc-400" />
                             {order.whatsapp_cliente}
                           </a>
                           {order.direccion_entrega && (

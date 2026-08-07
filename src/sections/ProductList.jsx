@@ -241,7 +241,45 @@ const ProductList = () => {
             termsToUse.forEach(term => {
               const cleanTerm = term.trim();
               if (cleanTerm) {
-                let termCondition = `name.ilike.%${cleanTerm}%,description.ilike.%${cleanTerm}%,sku.ilike.%${cleanTerm}%,oem_number.ilike.%${cleanTerm}%,part_number_fabricante.ilike.%${cleanTerm}%`;
+                // Generar variaciones inteligentes de viscosidad (ej: 2050 -> 2050, 20W50, 20W-50, 20-50)
+                const getViscosityVariations = (t) => {
+                  const c = t.toLowerCase();
+                  const vars = [c];
+                  const matchNoW = c.match(/^(\d{1,2})(\d{2})$/);
+                  if (matchNoW) {
+                    const [, n1, n2] = matchNoW;
+                    const v1 = parseInt(n1, 10);
+                    const v2 = parseInt(n2, 10);
+                    if (v1 >= 0 && v1 <= 85 && v2 >= 16 && v2 <= 140) {
+                      vars.push(`${n1}w${n2}`);
+                      vars.push(`${n1}w-${n2}`);
+                      vars.push(`${n1}w ${n2}`);
+                      vars.push(`${n1}-${n2}`);
+                    }
+                  }
+                  const matchWithW = c.match(/^(\d{1,2})w[-_\s]?(\d{2,3})$/i);
+                  if (matchWithW) {
+                    const [, n1, n2] = matchWithW;
+                    vars.push(`${n1}${n2}`);
+                    vars.push(`${n1}w${n2}`);
+                    vars.push(`${n1}w-${n2}`);
+                    vars.push(`${n1}w ${n2}`);
+                    vars.push(`${n1}-${n2}`);
+                  }
+                  return [...new Set(vars)];
+                };
+
+                const termVars = getViscosityVariations(cleanTerm);
+                const textConditions = [];
+                termVars.forEach(v => {
+                  textConditions.push(`name.ilike.%${v}%`);
+                  textConditions.push(`description.ilike.%${v}%`);
+                  textConditions.push(`sku.ilike.%${v}%`);
+                  textConditions.push(`oem_number.ilike.%${v}%`);
+                  textConditions.push(`part_number_fabricante.ilike.%${v}%`);
+                });
+
+                let termCondition = textConditions.join(",");
                 
                 const crossRefIds = crossRefMapByTerm[term];
                 if (crossRefIds && crossRefIds.length > 0) {

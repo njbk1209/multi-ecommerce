@@ -4,7 +4,13 @@ import { parseProductsCSV } from '../utils/csv'
 import { supabase } from '../utils/supabase'
 import toast from 'react-hot-toast'
 
-export default function CSVImportModal({ isOpen, onClose, existingProducts, branches, onImportSuccess }) {
+export default function CSVImportModal({
+  isOpen,
+  onClose = () => {},
+  existingProducts = [],
+  branches = [],
+  onImportSuccess = () => {}
+}) {
   const [file, setFile] = useState(null)
   const [parsedData, setParsedData] = useState(null)
   const [parseError, setParseError] = useState('')

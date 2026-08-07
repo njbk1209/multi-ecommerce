@@ -19,6 +19,7 @@ import {
   Building2,
   PackageCheck,
   Calendar,
+  CreditCard,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../utils/supabase";
@@ -33,6 +34,7 @@ import BranchInventoryManager from "./BranchInventoryManager";
 import PickingScannerModal from "./PickingScannerModal";
 import VehiclesManager from "./VehiclesManager";
 import ShippingCompaniesManager from "./ShippingCompaniesManager";
+import OrderPaymentModal from "./OrderPaymentModal";
 
 const normalizePhone = (phone) => {
   if (!phone) return "";
@@ -98,6 +100,7 @@ const AdminDashboard = ({ onLogout, session }) => {
   const [activeTab, setActiveTab] = useState("orders"); // 'orders' | 'products' | 'categories' | 'shipping'
   const [pickedState, setPickedState] = useState({}); // { orderId: { itemId: count } }
   const [activePickingOrder, setActivePickingOrder] = useState(null);
+  const [paymentModalOrder, setPaymentModalOrder] = useState(null);
 
   // Cargar compañías de envío activas
   const fetchShippingCompanies = async () => {
@@ -1297,6 +1300,28 @@ const AdminDashboard = ({ onLogout, session }) => {
                                   }
                                   return (
                                     <>
+                                      {/* Botón de Registro / Verificación de Pago */}
+                                      {(() => {
+                                        const hasPayment = !!order.detalles_pago?.fecha_registro;
+                                        const registeredUSD = parseFloat(order.detalles_pago?.total_registrado_usd || 0);
+                                        return (
+                                          <button
+                                            onClick={() => setPaymentModalOrder(order)}
+                                            className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 active:scale-95 shadow-sm ${
+                                              hasPayment
+                                                ? "bg-emerald-700 hover:bg-emerald-800 text-white"
+                                                : "bg-zinc-900 hover:bg-zinc-800 text-white"
+                                            }`}
+                                          >
+                                            <CreditCard className="w-4 h-4 text-emerald-400" />
+                                            <span>
+                                              {hasPayment
+                                                ? `✓ Pago Registrado ($${registeredUSD.toFixed(2)})`
+                                                : "💳 Registrar Pago"}
+                                            </span>
+                                          </button>
+                                        );
+                                      })()}
                                       {order.estado === "pendiente" && (
                                         <button
                                           onClick={() =>
@@ -1624,6 +1649,21 @@ const AdminDashboard = ({ onLogout, session }) => {
           onCompletePicking={(orderToComplete) => {
             setActivePickingOrder(null);
             handleUpdateStatus(orderToComplete.id, "en espera de retiro");
+          }}
+        />
+      )}
+
+      {/* Modal de Registro y Verificación de Pagos */}
+      {paymentModalOrder && (
+        <OrderPaymentModal
+          isOpen={!!paymentModalOrder}
+          onClose={() => setPaymentModalOrder(null)}
+          order={paymentModalOrder}
+          exchangeRate={exchangeRate}
+          onSaveSuccess={(updatedOrder) => {
+            setOrders((prev) =>
+              prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o))
+            );
           }}
         />
       )}

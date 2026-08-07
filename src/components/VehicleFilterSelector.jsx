@@ -4,8 +4,8 @@ import { supabase } from '../utils/supabase'
 
 export default function VehicleFilterSelector({
   vehicleFilter = { marcaId: '', modeloId: '', generacionId: '' },
-  onChange,
-  onClear,
+  onChange = () => {},
+  onClear = () => {},
   compact = false
 }) {
   const [marcas, setMarcas] = useState([])

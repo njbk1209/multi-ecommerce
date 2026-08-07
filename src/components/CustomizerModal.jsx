@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { X, ShoppingBag } from "lucide-react";
 
-const CustomizerModal = ({ isOpen, onClose, product, onConfirm }) => {
+const CustomizerModal = ({
+  isOpen,
+  onClose = () => {},
+  product,
+  onConfirm = () => {},
+}) => {
   const [optionGroups, setOptionGroups] = useState([]);
   const [selectedOptions, setSelectedOptions] = useState({}); // Key: group_id, Value: Array of option objects
   const [comment, setComment] = useState("");

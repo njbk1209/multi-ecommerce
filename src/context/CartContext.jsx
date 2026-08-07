@@ -8,6 +8,7 @@ const CartContext = createContext();
 
 export const CartProvider = ({ children }) => {
   const { exchangeRate } = useCurrency();
+  const [isCartOpen, setIsCartOpen] = useState(false);
 
   // Inicializar estado del carrito de forma perezosa desde localStorage
   const [cart, setCart] = useState(() => {
@@ -201,10 +202,12 @@ export const CartProvider = ({ children }) => {
       }
     }
 
+    const safeOptions = Array.isArray(selectedOptions) ? selectedOptions : [];
+
     const basePrice = product.precio_por_tamano ? 0 : product.price;
     const baseComparePrice = product.precio_por_tamano ? 0 : product.compare_price;
 
-    const modifiersTotal = selectedOptions.reduce((sum, opt) => sum + (parseFloat(opt.price_modifier) || 0), 0);
+    const modifiersTotal = safeOptions.reduce((sum, opt) => sum + (parseFloat(opt.price_modifier) || 0), 0);
     const itemPrice = basePrice + modifiersTotal;
     const itemComparePrice = baseComparePrice ? baseComparePrice + modifiersTotal : null;
 
@@ -213,7 +216,7 @@ export const CartProvider = ({ children }) => {
     const itemComparePriceBs = itemComparePrice ? itemComparePrice * rate : null;
 
     // Clave única según producto + modificadores + comentario para separar líneas distintas del mismo producto
-    const optionKey = selectedOptions.map(o => o.id).sort().join('_');
+    const optionKey = safeOptions.map(o => o.id).sort().join('_');
     const cartItemId = `${product.id}-${optionKey}-${comment}`;
 
     const addAmount = Math.max(1, parseInt(initialQty, 10) || 1);
@@ -274,7 +277,7 @@ export const CartProvider = ({ children }) => {
   const getTotal = (currency) => currency === 'BS' ? totalBS : totalUSD;
 
   return (
-    <CartContext.Provider value={{ cart, addToCart, removeFromCart, updateQuantity, totalUSD, totalBS, getTotal, setCart, validateCartBeforeCheckout }}>
+    <CartContext.Provider value={{ cart, addToCart, removeFromCart, updateQuantity, totalUSD, totalBS, getTotal, setCart, validateCartBeforeCheckout, isCartOpen, setIsCartOpen, setIsOpen: setIsCartOpen }}>
       {children}
     </CartContext.Provider>
   );

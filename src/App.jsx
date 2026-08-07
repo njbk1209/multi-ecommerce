@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import HeroCarousel from './sections/HeroCarousel'
 import ProductList from './sections/ProductList'
 import StoreFeatures from './components/StoreFeatures'
@@ -12,6 +12,8 @@ import { supabase } from './utils/supabase'
 import { useCurrency } from './context/CurrencyContext'
 import toast from 'react-hot-toast'
 
+import ProductDetailPage from './pages/ProductDetailPage'
+
 // Componente para proteger las rutas administrativas de forma declarativa
 const ProtectedRoute = ({ children, session }) => {
   if (!session) {
@@ -20,16 +22,41 @@ const ProtectedRoute = ({ children, session }) => {
   return children
 }
 
-const ShopLayout = () => (
-  <div>
-    <Navbar />
-    <HeroCarousel />
-    <StoreFeatures />
-    <ProductList />
-    <About />
-    <Footer />
-  </div>
-)
+const ShopLayout = () => {
+  const { hash } = useLocation();
+
+  useEffect(() => {
+    if (hash) {
+      const id = hash.replace('#', '');
+      const timer = setTimeout(() => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 150);
+      return () => clearTimeout(timer);
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [hash]);
+
+  return (
+    <div>
+      <Navbar />
+      <section id="inicio">
+        <HeroCarousel />
+        <StoreFeatures />
+      </section>
+      <section id="catalogo">
+        <ProductList />
+      </section>
+      <section id="nosotros">
+        <About />
+      </section>
+      <Footer />
+    </div>
+  );
+};
 
 const App = () => {
   const [session, setSession] = useState(null)
@@ -91,6 +118,7 @@ const App = () => {
   return (
     <Routes>
       <Route path="/" element={<ShopLayout />} />
+      <Route path="/producto/:slug" element={<ProductDetailPage />} />
       <Route 
         path="/login" 
         element={<Login session={session} />} 

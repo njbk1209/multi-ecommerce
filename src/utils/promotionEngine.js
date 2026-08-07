@@ -128,6 +128,7 @@ export const evaluarPromocionProducto = (producto, cantidad = 1, promociones = [
   // Ordenar próximos escalones por cercanía
   proximosEscalones.sort((a, b) => a.cantidadFaltante - b.cantidadFaltante)
   const proximoEscalon = proximosEscalones[0] || null
+  const esMaximoDescuento = tienePromocion && proximosEscalones.length === 0
 
   return {
     tienePromocion,
@@ -137,6 +138,7 @@ export const evaluarPromocionProducto = (producto, cantidad = 1, promociones = [
     porcentajeDescuento: mejorOferta.porcentajeDescuento,
     badgeText,
     nombrePromocion: mejorOferta.promocion?.nombre ?? null,
-    proximoEscalon
+    proximoEscalon,
+    esMaximoDescuento
   }
 }

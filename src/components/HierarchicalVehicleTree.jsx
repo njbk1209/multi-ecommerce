@@ -4,8 +4,8 @@ import { supabase } from '../utils/supabase'
 
 export default function HierarchicalVehicleTree({
   vehicleFilter = { marcaId: '', modeloId: '', generacionId: '' },
-  onChange,
-  onClear,
+  onChange = () => {},
+  onClear = () => {},
 }) {
   const [marcasTree, setMarcasTree] = useState([])
   const [loading, setLoading] = useState(true)

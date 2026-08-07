@@ -17,10 +17,10 @@ import toast from 'react-hot-toast'
 
 export default function PromotionRuleCSVModal({
   isOpen,
-  onClose,
+  onClose = () => {},
   promotion,
   products = [],
-  onImportSuccess,
+  onImportSuccess = () => {},
 }) {
   const [file, setFile] = useState(null)
   const [parsedData, setParsedData] = useState(null)

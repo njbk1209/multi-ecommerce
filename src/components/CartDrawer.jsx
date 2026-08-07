@@ -229,7 +229,7 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
     }
     setGeoLoading(true);
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const { latitude, longitude } = position.coords;
         setGpsLocation({ lat: latitude, lng: longitude });
 
@@ -242,8 +242,27 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
           setSucursales(sorted);
         }
 
+        // Asignación directa inmediata fallback
+        const fallbackAddress = `Ubicación GPS (${latitude.toFixed(6)}, ${longitude.toFixed(6)})`;
+        if (!direccion.trim()) {
+          setDireccion(fallbackAddress);
+        }
+
+        // Obtener dirección real legible mediante geocodificación inversa (Nominatim)
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=es`
+          );
+          const data = await res.json();
+          if (data && data.display_name) {
+            setDireccion(data.display_name);
+          }
+        } catch (err) {
+          console.error("Error al obtener dirección geocodificada:", err);
+        }
+
         setGeoLoading(false);
-        toast.success("📍 Ubicación GPS obtenida exitosamente");
+        toast.success("📍 Ubicación GPS y dirección establecidas exitosamente");
       },
       (error) => {
         console.error("Error al obtener ubicación:", error);
@@ -359,7 +378,10 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
         return;
       }
 
-      toast.success("¡Pedido registrado exitosamente!");
+      toast.success("🎉 ¡Pedido creado exitosamente! Redireccionando a WhatsApp...", {
+        duration: 4000,
+        style: { background: "#059669", color: "#fff", borderRadius: "12px" },
+      });
     } catch (dbErr) {
       console.error("Excepción al intentar crear pedido en Supabase:", dbErr);
       toast.error(
@@ -376,19 +398,21 @@ export default function CartDrawer({ isOpen, setIsOpen }) {
 
     const waUrl = `https://wa.me/${formattedWhatsapp}?text=${mensaje}`;
 
-    setCart([]);
-    setForm({ nombre: "", cedulaTipo: "V", cedulaNumero: "", whatsapp: "" });
-    setDireccion("");
-    setGpsLocation(null);
-    setShowCheckoutForm(false);
-    setIsOpen(false);
-    setLoading(false);
+    setTimeout(() => {
+      setCart([]);
+      setForm({ nombre: "", cedulaTipo: "V", cedulaNumero: "", whatsapp: "" });
+      setDireccion("");
+      setGpsLocation(null);
+      setShowCheckoutForm(false);
+      setIsOpen(false);
+      setLoading(false);
 
-    if (isMobile) {
-      window.location.href = waUrl;
-    } else {
-      window.open(waUrl, "_blank");
-    }
+      if (isMobile) {
+        window.location.href = waUrl;
+      } else {
+        window.open(waUrl, "_blank");
+      }
+    }, 3000);
   };
 
   return (

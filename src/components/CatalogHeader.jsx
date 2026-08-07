@@ -11,13 +11,14 @@ const SORT_OPTIONS = [
 ]
 
 const CatalogHeader = ({
-  searchQuery,
+  searchQuery = '',
   onSearch,
-  sortBy,
-  onSortChange,
-  isFiltersOpen,
-  onToggleFilters,
-  activeFilterCount,
+  onSearchChange,
+  sortBy = 'newest',
+  onSortChange = () => {},
+  isFiltersOpen = false,
+  onToggleFilters = () => {},
+  activeFilterCount = 0,
 }) => {
   const [inputValue, setInputValue] = useState(searchQuery || '')
   const [isSortOpen, setIsSortOpen] = useState(false)
@@ -39,14 +40,21 @@ const CatalogHeader = ({
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  const triggerSearch = (val) => {
+    const fn = onSearch || onSearchChange
+    if (typeof fn === 'function') {
+      fn(val)
+    }
+  }
+
   const handleSubmitSearch = (e) => {
     e?.preventDefault()
-    onSearch(inputValue.trim())
+    triggerSearch(inputValue.trim())
   }
 
   const handleClearSearch = () => {
     setInputValue('')
-    onSearch('')
+    triggerSearch('')
   }
 
   const currentSortLabel = SORT_OPTIONS.find(o => o.value === sortBy)?.label || 'Ordenar'

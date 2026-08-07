@@ -23,12 +23,12 @@ import {
 
 export default function PickingScannerModal({
   isOpen,
-  onClose,
+  onClose = () => {},
   order,
-  onCompletePicking,
-  pickedState,
-  setPickedState,
-  onRefreshOrders,
+  onCompletePicking = () => {},
+  pickedState = {},
+  setPickedState = () => {},
+  onRefreshOrders = () => {},
 }) {
   const [manualCode, setManualCode] = useState("");
   const [scanQty, setScanQty] = useState(1);

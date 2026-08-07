@@ -128,7 +128,7 @@ export function parseYearTermsFromQuery(searchQuery) {
   const ranges = extractYearRangesFromText(queryStr);
 
   const rawTerms = queryStr.split(/\s+/).filter(t => t.length > 0);
-  const stopWords = new Set(['de', 'del', 'la', 'el', 'en', 'para', 'con', 'y', 'a', 'al', 'los', 'las', 'un', 'una', 'por', 'hasta', 'desde']);
+  const stopWords = new Set(['de', 'del', 'la', 'el', 'en', 'para', 'con', 'y', 'a', 'al', 'los', 'las', 'un', 'una', 'por', 'hasta', 'desde', 'motor', 'repuesto', 'carro', 'auto', 'vehiculo']);
   const significantTerms = rawTerms.filter(t => !stopWords.has(t.toLowerCase()));
   const termsToUse = significantTerms.length > 0 ? significantTerms : rawTerms;
 
@@ -149,20 +149,10 @@ export function parseYearTermsFromQuery(searchQuery) {
       return;
     }
 
-    // Si es un año de 4 dígitos (1950 - 2049)
-    if (/^\d{4}$/.test(clean) && num >= 1950 && num <= 2049) {
+    // Si es un año de 4 dígitos dentro del rango común de vehículos (1950 - 2029)
+    if (/^\d{4}$/.test(clean) && num >= 1950 && num <= 2029) {
       yearNumbers.push(num);
-    }
-    // Si es un año de 2 dígitos plausibles (ej: 03 -> 2003, 98 -> 1998)
-    else if (/^\d{2}$/.test(clean) && !isNaN(num)) {
-      const yearFrom2D = num >= 50 ? 1900 + num : 2000 + num;
-      if (yearFrom2D >= 1970 && yearFrom2D <= 2035) {
-        yearNumbers.push(yearFrom2D);
-      } else {
-        textTerms.push(term);
-      }
-    }
-    else {
+    } else {
       textTerms.push(term);
     }
   });

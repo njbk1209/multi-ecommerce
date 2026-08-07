@@ -4,12 +4,12 @@ import { X, Tag, Percent, DollarSign, PackageCheck, SlidersHorizontal, RotateCcw
 import HierarchicalVehicleTree from './HierarchicalVehicleTree'
 
 const CatalogFilters = ({
-  isOpen,
-  onClose,
+  isOpen = false,
+  onClose = () => {},
   categoryTree = [],
   promotions = [],
-  filters,
-  onFiltersChange,
+  filters = {},
+  onFiltersChange = () => {},
   onApply,
   onClear,
 }) => {
@@ -34,9 +34,9 @@ const CatalogFilters = ({
   }
 
   const handleApply = () => {
-    onFiltersChange(local)
-    if (onApply) onApply()
-    if (onClose) onClose()
+    if (typeof onFiltersChange === 'function') onFiltersChange(local)
+    if (typeof onApply === 'function') onApply()
+    if (typeof onClose === 'function') onClose()
   }
 
   const handleClear = () => {
@@ -50,13 +50,13 @@ const CatalogFilters = ({
       vehicle: { marcaId: '', modeloId: '', generacionId: '' },
     }
     setLocal(cleared)
-    onFiltersChange(cleared)
-    if (onClear) onClear()
+    if (typeof onFiltersChange === 'function') onFiltersChange(cleared)
+    if (typeof onClear === 'function') onClear()
   }
 
   return (
     <Transition.Root show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={onClose}>
+      <Dialog as="div" className="relative z-50" onClose={() => typeof onClose === 'function' && onClose()}>
         {/* Backdrop con desenfoque */}
         <Transition.Child
           as={Fragment}

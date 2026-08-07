@@ -1,4 +1,5 @@
 import React, { useState, Fragment } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useCurrency } from "../context/CurrencyContext";
 import CartDrawer from "./CartDrawer";
@@ -33,10 +34,27 @@ const CurrencyToggle = () => {
 };
 
 const Navbar = () => {
-  const [isCartOpen, setIsCartOpen] = useState(false);
+  const { cart, isCartOpen, setIsCartOpen } = useCart();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { cart } = useCart();
   const { exchangeRate, store } = useCurrency();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleNavClick = (sectionId, e) => {
+    e?.preventDefault();
+    setIsMobileMenuOpen(false);
+
+    if (location.pathname !== "/") {
+      navigate(`/#${sectionId}`);
+    } else {
+      const el = document.getElementById(sectionId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth" });
+      } else {
+        window.location.hash = sectionId;
+      }
+    }
+  };
 
   return (
     <>
@@ -55,8 +73,9 @@ const Navbar = () => {
           {/* Fila Superior (Middlebar): Logo Centrado */}
           <div className="flex justify-center items-center py-1">
             <a
-              href="#inicio"
-              className="flex items-center justify-center gap-2 text-2xl sm:text-3xl font-serif font-bold text-primary tracking-tight text-center"
+              href="/#inicio"
+              onClick={(e) => handleNavClick("inicio", e)}
+              className="flex items-center justify-center gap-2 text-2xl sm:text-3xl font-serif font-bold text-primary tracking-tight text-center cursor-pointer"
             >
               {store?.logo_url ? (
                 <img
@@ -77,7 +96,7 @@ const Navbar = () => {
               {/* Botón 3 barras Móvil */}
               <button
                 onClick={() => setIsMobileMenuOpen(true)}
-                className="md:hidden p-2 text-slate-700 hover:text-primary transition-colors rounded-lg hover:bg-primary-light/50 active:scale-95"
+                className="md:hidden p-2 text-slate-700 hover:text-primary transition-colors rounded-lg hover:bg-primary-light/50 active:scale-95 cursor-pointer"
                 title="Abrir menú"
               >
                 <Menu className="w-6 h-6" />
@@ -86,20 +105,23 @@ const Navbar = () => {
               {/* Enlaces de Navegación (Desktop) */}
               <div className="hidden md:flex items-center gap-8 text-xs font-semibold text-slate-700 uppercase tracking-widest">
                 <a
-                  href="#inicio"
-                  className="hover:text-primary transition-colors py-1"
+                  href="/#inicio"
+                  onClick={(e) => handleNavClick("inicio", e)}
+                  className="hover:text-primary transition-colors py-1 cursor-pointer"
                 >
                   Inicio
                 </a>
                 <a
-                  href="#catalogo"
-                  className="hover:text-primary transition-colors py-1"
+                  href="/#catalogo"
+                  onClick={(e) => handleNavClick("catalogo", e)}
+                  className="hover:text-primary transition-colors py-1 cursor-pointer"
                 >
                   Catálogo
                 </a>
                 <a
-                  href="#nosotros"
-                  className="hover:text-primary transition-colors py-1"
+                  href="/#nosotros"
+                  onClick={(e) => handleNavClick("nosotros", e)}
+                  className="hover:text-primary transition-colors py-1 cursor-pointer"
                 >
                   Nosotros
                 </a>
@@ -111,7 +133,7 @@ const Navbar = () => {
               <CurrencyToggle />
               <button
                 onClick={() => setIsCartOpen(true)}
-                className="p-2 text-slate-600 hover:text-primary transition-colors relative active:scale-95"
+                className="p-2 text-slate-600 hover:text-primary transition-colors relative active:scale-95 cursor-pointer"
                 title="Ver carrito"
               >
                 <ShoppingBag className="h-6 w-6" />
@@ -166,7 +188,7 @@ const Navbar = () => {
                         </span>
                         <button
                           onClick={() => setIsMobileMenuOpen(false)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-primary-dark hover:bg-primary-light/50 transition-colors"
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-primary-dark hover:bg-primary-light/50 transition-colors cursor-pointer"
                         >
                           <X className="w-5 h-5" />
                         </button>
@@ -175,25 +197,25 @@ const Navbar = () => {
                       {/* Enlaces del Menú Móvil */}
                       <div className="p-4 space-y-1">
                         <a
-                          href="#inicio"
-                          onClick={() => setIsMobileMenuOpen(false)}
-                          className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-700 hover:bg-primary-light/40 hover:text-primary transition-all"
+                          href="/#inicio"
+                          onClick={(e) => handleNavClick("inicio", e)}
+                          className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-700 hover:bg-primary-light/40 hover:text-primary transition-all cursor-pointer"
                         >
                           <Home className="w-4 h-4 text-primary" />
                           Inicio
                         </a>
                         <a
-                          href="#catalogo"
-                          onClick={() => setIsMobileMenuOpen(false)}
-                          className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-700 hover:bg-primary-light/40 hover:text-primary transition-all"
+                          href="/#catalogo"
+                          onClick={(e) => handleNavClick("catalogo", e)}
+                          className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-700 hover:bg-primary-light/40 hover:text-primary transition-all cursor-pointer"
                         >
                           <Compass className="w-4 h-4 text-primary" />
                           Catálogo
                         </a>
                         <a
-                          href="#nosotros"
-                          onClick={() => setIsMobileMenuOpen(false)}
-                          className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-700 hover:bg-primary-light/40 hover:text-primary transition-all"
+                          href="/#nosotros"
+                          onClick={(e) => handleNavClick("nosotros", e)}
+                          className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-slate-700 hover:bg-primary-light/40 hover:text-primary transition-all cursor-pointer"
                         >
                           <Info className="w-4 h-4 text-primary" />
                           Nosotros

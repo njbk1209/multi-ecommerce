@@ -65,11 +65,27 @@ const ProductDetailPage = () => {
 
   // Auxiliary data
   const [sucursales, setSucursales] = useState([]);
+  const [selectedSucursalId, setSelectedSucursalId] = useState('');
   const [branchStockList, setBranchStockList] = useState([]);
   const [geoLoading, setGeoLoading] = useState(false);
   const [compatibilities, setCompatibilities] = useState([]);
   const [crossReferences, setCrossReferences] = useState([]);
   const [relatedProducts, setRelatedProducts] = useState([]);
+
+  // Helper para obtener el stock y disponibilidad de una sucursal específica
+  const getBranchStockInfo = (sucursalId) => {
+    if (!sucursalId) return { stock: 0, isAvailable: false };
+    const match = branchStockList.find((b) => b.sucursal_id?.toString() === sucursalId.toString());
+    if (match) {
+      const isAvail = (match.stock_status ?? true) && (match.stock > 0);
+      return { stock: match.stock ?? 0, isAvailable: isAvail };
+    }
+    if (branchStockList.length > 0) {
+      return { stock: 0, isAvailable: false };
+    }
+    const fallback = product?.stock ?? 0;
+    return { stock: fallback, isAvailable: fallback > 0 };
+  };
 
   // Active tab in details section: 'sucursales' | 'compatibilidad' | 'referencias'
   const [activeTab, setActiveTab] = useState('sucursales');
@@ -132,6 +148,11 @@ const ProductDetailPage = () => {
             .order("nombre", { ascending: true });
 
           setSucursales(sucData || []);
+          if (sucData && sucData.length === 1) {
+            setSelectedSucursalId(sucData[0].id.toString());
+          } else {
+            setSelectedSucursalId('');
+          }
         }
 
         // 4. Fetch vehicle compatibility
@@ -306,27 +327,53 @@ const ProductDetailPage = () => {
   const rate = parseFloat(exchangeRate) || 1;
   const totalLinePriceBS = totalLinePriceUSD * rate;
 
+  const targetBranchId = selectedSucursalId || (sucursales.length === 1 ? sucursales[0]?.id : null);
+  const selectedSucursalObj = sucursales.find((s) => s.id?.toString() === targetBranchId?.toString()) || null;
+  const selectedBranchStockInfo = targetBranchId ? getBranchStockInfo(targetBranchId) : null;
+  const isSelectedBranchOutOfStock = targetBranchId
+    ? (!selectedBranchStockInfo?.isAvailable || (selectedBranchStockInfo?.stock ?? 0) < quantity)
+    : false;
+
   const handleAddToCart = () => {
     if (isMissingRequiredSelections()) {
       toast.error('Por favor selecciona las opciones obligatorias antes de agregar al carrito.');
       return;
     }
 
+    if (sucursales.length > 1 && !selectedSucursalId) {
+      toast.error('Por favor selecciona una sucursal para tu producto.');
+      return;
+    }
+
+    if (targetBranchId) {
+      const stockInfo = getBranchStockInfo(targetBranchId);
+      if (!stockInfo.isAvailable || stockInfo.stock < quantity) {
+        toast.error('La sucursal seleccionada no tiene stock disponible para este producto.');
+        return;
+      }
+    }
+
     const mainImageToUse = currentMainImageUrl || galleryImages[0]?.image || product?.image || product?.url || null;
 
-    addToCart(
-      {
-        ...product,
-        image: mainImageToUse,
-        price: effectiveUnitPriceUSD,
-        originalPrice: originalUnitPriceUSD,
-      },
+    const productData = {
+      ...product,
+      stock: selectedBranchStockInfo?.stock ?? product.stock,
+      image: mainImageToUse,
+      price: effectiveUnitPriceUSD,
+      originalPrice: originalUnitPriceUSD,
+      ciudad: selectedSucursalObj?.ciudad || product.ciudad,
+      sucursal_id: selectedSucursalObj?.id,
+      sucursal: selectedSucursalObj,
+    };
+
+    const success = addToCart(
+      productData,
       selectedOptionsFlat,
       comment,
       quantity
     );
 
-    if (typeof setIsCartOpen === 'function') {
+    if (success !== false && typeof setIsCartOpen === 'function') {
       setIsCartOpen(true);
     }
   };
@@ -342,8 +389,14 @@ const ProductDetailPage = () => {
         const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         const sorted = sortBranchesByProximity(sucursales, coords);
         setSucursales(sorted);
+        const availableBranch = sorted.find((suc) => getBranchStockInfo(suc.id).isAvailable);
+        if (availableBranch) {
+          setSelectedSucursalId(availableBranch.id.toString());
+          toast.success(`📍 Asignada la sucursal más cercana con stock: ${availableBranch.nombre}`);
+        } else {
+          toast.error('Ninguna sucursal cercana tiene stock disponible de este producto.');
+        }
         setGeoLoading(false);
-        toast.success('📍 Sucursales ordenadas por distancia GPS');
       },
       () => {
         setGeoLoading(false);
@@ -618,6 +671,82 @@ const ProductDetailPage = () => {
 
             {/* Selector de Cantidad y Botón de Agregar al Carrito */}
             <div className="space-y-4 border-t border-slate-100 pt-5">
+              {/* Selector de Sucursal / Almacén */}
+              {sucursales.length > 0 && (
+                <div className="space-y-2 pb-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-primary-dark flex items-center gap-1.5">
+                      <Building2 className="w-4 h-4 text-primary" />
+                      Elige la sucursal (almacén)
+                    </label>
+                    {sucursales.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={handleGeolocateBranch}
+                        disabled={geoLoading}
+                        className="text-xs text-primary hover:text-primary-dark font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        {geoLoading ? '⌛ Obteniendo...' : '📍 Asignar más cercana'}
+                      </button>
+                    )}
+                  </div>
+
+                  {sucursales.length > 1 ? (
+                    <div className={`relative rounded-xl transition-all ${!selectedSucursalId
+                      ? 'border-2 border-amber-400 bg-amber-50/80 text-amber-900 animate-pulse'
+                      : isSelectedBranchOutOfStock
+                        ? 'border-2 border-rose-300 bg-rose-50 text-rose-900'
+                        : 'border border-slate-200 bg-white text-slate-800'
+                      }`}>
+                      <select
+                        value={selectedSucursalId}
+                        onChange={(e) => {
+                          setSelectedSucursalId(e.target.value);
+                          e.target.blur();
+                        }}
+                        className="w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold outline-none bg-transparent cursor-pointer focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="" className="bg-white text-slate-800">-- Selecciona una Sucursal --</option>
+                        {sucursales.map((suc) => {
+                          const stockInfo = getBranchStockInfo(suc.id);
+                          const isOut = !stockInfo.isAvailable || stockInfo.stock <= 0;
+                          return (
+                            <option
+                              key={suc.id}
+                              value={suc.id}
+                              disabled={isOut}
+                              className={isOut ? "bg-slate-100 text-slate-400 font-normal" : "bg-white text-slate-800 font-semibold"}
+                            >
+                              {suc.nombre} ({suc.direccion || suc.ciudad || 'Sede'})
+                              {isOut ? ' — ⚠️ Sin Stock' : (suc.distanceKm != null ? ` - a ${suc.distanceKm.toFixed(1)} km` : '')}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className={`rounded-xl p-3 text-xs font-medium flex items-center justify-between gap-2 border ${
+                      isSelectedBranchOutOfStock
+                        ? 'bg-rose-50 border-rose-200 text-rose-700'
+                        : 'bg-primary-light/40 border-primary-light text-primary-dark'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <Building2 className={`w-4 h-4 shrink-0 ${isSelectedBranchOutOfStock ? 'text-rose-500' : 'text-primary'}`} />
+                        <span>
+                          <strong>{sucursales[0]?.nombre}</strong>
+                          {sucursales[0]?.direccion ? ` - ${sucursales[0].direccion}` : ''}
+                        </span>
+                      </div>
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${
+                        isSelectedBranchOutOfStock ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {isSelectedBranchOutOfStock ? 'Sin stock' : `Stock: ${getBranchStockInfo(sucursales[0]?.id).stock}`}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
                   <button
@@ -642,8 +771,8 @@ const ProductDetailPage = () => {
                 <button
                   type="button"
                   onClick={handleAddToCart}
-                  disabled={isMissingRequiredSelections()}
-                  className={`flex-1 py-3.5 px-6 rounded-2xl font-bold text-sm text-white transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 cursor-pointer ${isMissingRequiredSelections()
+                  disabled={isMissingRequiredSelections() || (sucursales.length > 1 && !selectedSucursalId) || isSelectedBranchOutOfStock}
+                  className={`flex-1 py-3.5 px-6 rounded-2xl font-bold text-sm text-white transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 cursor-pointer ${(isMissingRequiredSelections() || (sucursales.length > 1 && !selectedSucursalId) || isSelectedBranchOutOfStock)
                       ? 'bg-slate-300 cursor-not-allowed shadow-none'
                       : 'bg-primary hover:bg-primary-dark shadow-primary-light'
                     }`}

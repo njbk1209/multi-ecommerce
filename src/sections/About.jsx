@@ -9,18 +9,18 @@ const About = () => {
                 <div className="w-full md:w-1/2 relative">
                     <div className="aspect-square bg-primary-light rounded-2xl overflow-hidden shadow-sm group">
                         <img
-                            src="/images/autoparts_about.png"
+                            src="/images/pharmacy_about.png"
                             onError={(e) => {
                                 e.target.onerror = null;
-                                e.target.src = "https://images.unsplash.com/photo-1486006920555-c77dce18193b?auto=format&fit=crop&w=1000&q=80";
+                                e.target.src = "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=1000&q=80";
                             }}
-                            alt="Nuestra Tienda de Repuestos y Lubricantes"
+                            alt="Nuestra Farmacia y Servicios de Salud"
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                         />
                     </div>
                     {/* Elemento decorativo flotante */}
                     <div className="absolute -bottom-4 -right-4 bg-primary-dark text-white p-6 rounded-lg hidden md:block shadow-lg">
-                        <p className="text-sm font-light tracking-widest font-serif">Calidad & Garantía</p>
+                        <p className="text-sm font-light tracking-widest font-serif">Salud & Confianza</p>
                     </div>
                 </div>
 
@@ -32,19 +32,19 @@ const About = () => {
 
                     <div className="space-y-4 text-slate-600/80 text-lg leading-relaxed">
                         <p>
-                            Somos especialistas en la importación y comercialización de <strong>repuestos automotrices, kits de tiempo, lubricantes de alto rendimiento y aditivos</strong> para vehículos de todas las marcas.
+                            Somos una farmacia dedicada a cuidar de ti y de tu familia, ofreciendo una amplia gama de <strong>medicamentos de patente, genéricos, productos de cuidado personal, dermocosmética y suplementos nutricionales</strong> de la más alta calidad.
                         </p>
                         <p>
-                            Nos dedicamos a ofrecer soluciones mecánicas confiables con piezas 100% garantizadas, aceites de motor sintéticos y minerales, sistemas de frenos, correas y componentes de suspensión con la mejor relación calidad-precio.
+                            Nos enfocamos en brindar una atención farmacéutica cercana, ética y profesional, garantizando la disponibilidad de tus tratamientos médicos con la mejor asesoría y los mejores precios del mercado.
                         </p>
                         <p>
-                            Nos mueve la pasión por el rendimiento automotriz, la asesoría técnica personalizada y brindar la máxima compatibilidad para que mantengas tu vehículo siempre en óptimas condiciones de marcha.
+                            Tu salud y bienestar son nuestra prioridad. Contamos con servicio de despacho rápido y un equipo de profesionales listos para guiarte en el cuidado y conservación de tu salud.
                         </p>
                     </div>
 
                     <div className="mt-8 flex items-center gap-2 text-primary font-serif italic">
                         <span className="h-px w-8 bg-primary-light"></span>
-                        <span>Comprometidos con el rendimiento y protección de tu vehículo</span>
+                        <span>Comprometidos con tu salud, bienestar y calidad de vida</span>
                     </div>
                 </div>
 

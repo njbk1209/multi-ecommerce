@@ -32,7 +32,6 @@ import SettingsManager from "./SettingsManager";
 import BranchesManager from "./BranchesManager";
 import BranchInventoryManager from "./BranchInventoryManager";
 import PickingScannerModal from "./PickingScannerModal";
-import VehiclesManager from "./VehiclesManager";
 import ShippingCompaniesManager from "./ShippingCompaniesManager";
 import OrderPaymentModal from "./OrderPaymentModal";
 
@@ -809,16 +808,6 @@ const AdminDashboard = ({ onLogout, session }) => {
               }`}
           >
             📦 Inventario
-          </button>
-          <button
-            onClick={() => setActiveTab("vehicles")}
-            className={`pb-2.5 text-xs sm:text-sm font-semibold border-b-2 transition-all shrink-0 active:scale-95 px-1
-              ${activeTab === "vehicles"
-                ? "border-zinc-900 text-zinc-950 font-bold"
-                : "border-transparent text-zinc-400 hover:text-zinc-600"
-              }`}
-          >
-            🚗 Vehículos
           </button>
           <button
             onClick={() => setActiveTab("categories")}
@@ -1633,7 +1622,6 @@ const AdminDashboard = ({ onLogout, session }) => {
         {activeTab === "categories" && <CategoriesManager />}
         {activeTab === "options" && <OptionsManager />}
         {activeTab === "settings" && <SettingsManager />}
-        {activeTab === "vehicles" && <VehiclesManager />}
         {activeTab === "shipping" && <ShippingCompaniesManager />}
       </main>
 
